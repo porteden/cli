@@ -1,0 +1,64 @@
+version: 2
+
+project_name: porteden
+
+changelog:
+  disable: true
+
+builds:
+  - id: porteden
+    main: ./cmd/porteden
+    binary: porteden
+    ldflags: >-
+      -s -w
+      -X github.com/porteden/cli/internal/config.Version={{ .Tag }}
+      -X github.com/porteden/cli/internal/config.Commit={{ .ShortCommit }}
+      -X github.com/porteden/cli/internal/config.Date={{ .Date }}
+    env:
+      - CGO_ENABLED=0
+    targets:
+      - linux_amd64
+      - linux_arm64
+      - windows_amd64
+      - windows_arm64
+  - id: porteden_darwin
+    main: ./cmd/porteden
+    binary: porteden
+    ldflags: >-
+      -s -w
+      -X github.com/porteden/cli/internal/config.Version={{ .Tag }}
+      -X github.com/porteden/cli/internal/config.Commit={{ .ShortCommit }}
+      -X github.com/porteden/cli/internal/config.Date={{ .Date }}
+    env:
+      - CGO_ENABLED=1
+    targets:
+      - darwin_amd64
+      - darwin_arm64
+
+archives:
+  - builds:
+      - porteden
+      - porteden_darwin
+    format: tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        format: zip
+
+checksum:
+  name_template: checksums.txt
+
+brews:
+  - name: porteden
+    repository:
+      owner: porteden
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    directory: Formula
+    homepage: https://porteden.com
+    description: Calendar firewall & management CLI for PortEden
+    license: MIT
+    install: |
+      bin.install "porteden"
+    test: |
+      system "#{bin}/porteden", "--version"
