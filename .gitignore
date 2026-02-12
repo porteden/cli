@@ -1,0 +1,44 @@
+# Binaries
+/porteden
+/porteden-*
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test binaries
+*.test
+*.out
+
+# Go workspace file
+go.work
+
+# Build artifacts
+/dist/
+/build/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Credentials (should never be committed)
+credentials
+*.key
+*.pem
+
+# Config files with secrets
+config.local.json
+.env
+.env.local
+*.local.json
+
+# Claude Code settings (may contain API keys in permissions)
+.claude/
+CLAUDE.md
