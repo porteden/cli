@@ -20,38 +20,48 @@ var (
 
 var rootCmd = &cobra.Command{
 	Use:     "porteden",
-	Short:   "PortEden CLI - Calendar and email access from your terminal",
+	Short:   "PortEden CLI - Calendar, email, and Google Drive from your terminal",
 	Version: config.Version,
-	Long: `PortEden CLI provides command-line access to your calendars and email.
+	Long: `PortEden CLI provides command-line access to calendars, email, and Google Drive.
 
 Authentication:
   porteden auth login                    Authenticate via browser
   porteden auth login --token <key>      Authenticate with API key (non-interactive)
-  porteden auth login --profile work     Authenticate to a named profile
   porteden auth use <profile>            Switch active profile
-  porteden auth list                     List all profiles
   porteden auth status                   Check authentication status
 
 Calendar:
   porteden calendar events       List/search events
-  porteden calendar event        Get a single event
   porteden calendar create       Create an event
   porteden calendar update       Update an event
   porteden calendar delete       Delete an event
   porteden calendar respond      Respond to invitation
   porteden calendar freebusy     Check free/busy times
-  porteden calendar by-contact   Events with a contact
-  porteden calendar calendars    List calendars
 
 Email:
   porteden email messages        List/search emails
-  porteden email message         Get a single email
-  porteden email thread          Get an email thread
   porteden email send            Send a new email
   porteden email reply           Reply to an email
   porteden email forward         Forward an email
   porteden email delete          Delete an email
-  porteden email modify          Modify email properties
+
+Drive:
+  porteden drive files           List/search files
+  porteden drive upload          Upload a file
+  porteden drive download        Get file download/export links
+  porteden drive share           Share a file
+  porteden drive delete          Move file to trash
+
+Docs (Google Docs):
+  porteden docs read             Read document content
+  porteden docs edit             Edit document (append, insert, replace)
+  porteden docs create           Create a new Google Doc
+
+Sheets (Google Sheets):
+  porteden sheets read           Read cell values
+  porteden sheets write          Write cell values
+  porteden sheets append         Append rows
+  porteden sheets create         Create a new Google Sheet
 
 System:
   porteden update                Update to the latest version
@@ -98,6 +108,9 @@ func init() {
 	rootCmd.AddCommand(authCmd)
 	rootCmd.AddCommand(calendarCmd)
 	rootCmd.AddCommand(emailCmd)
+	rootCmd.AddCommand(driveCmd)
+	rootCmd.AddCommand(docsCmd)
+	rootCmd.AddCommand(sheetsCmd)
 	rootCmd.AddCommand(selfUpdateCmd)
 	rootCmd.AddCommand(uninstallCmd)
 }

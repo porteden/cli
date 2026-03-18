@@ -293,3 +293,191 @@ type EmailActionResponse struct {
 	ThreadID     string `json:"threadId,omitempty"`
 	ErrorMessage string `json:"errorMessage,omitempty"`
 }
+
+// ==================== DRIVE TYPES ====================
+
+// DriveUser represents a file owner or collaborator
+type DriveUser struct {
+	Email       string  `json:"email"`
+	DisplayName *string `json:"displayName,omitempty"`
+	Role        *string `json:"role,omitempty"`
+}
+
+// DriveFile represents a file or folder in Google Drive
+type DriveFile struct {
+	ID               string            `json:"id"`
+	Name             *string           `json:"name,omitempty"`
+	MimeType         *string           `json:"mimeType,omitempty"`
+	Size             *int64            `json:"size,omitempty"`
+	CreatedTime      *string           `json:"createdTime,omitempty"`
+	ModifiedTime     *string           `json:"modifiedTime,omitempty"`
+	Owners           []DriveUser       `json:"owners,omitempty"`
+	SharedWith       []DriveUser       `json:"sharedWith,omitempty"`
+	Description      *string           `json:"description,omitempty"`
+	WebViewLink      *string           `json:"webViewLink,omitempty"`
+	DownloadLink     *string           `json:"downloadLink,omitempty"`
+	ParentFolderID   *string           `json:"parentFolderId,omitempty"`
+	ParentFolderName *string           `json:"parentFolderName,omitempty"`
+	Labels           map[string]string `json:"labels,omitempty"`
+	IsFolder         bool              `json:"isFolder"`
+	Provider         string            `json:"provider"`
+}
+
+// DriveFilesResponse is the response for drive file list/search
+type DriveFilesResponse struct {
+	Files         []DriveFile `json:"files"`
+	NextPageToken *string     `json:"nextPageToken,omitempty"`
+	HasMore       bool        `json:"hasMore,omitempty"`
+	AccessInfo    *string     `json:"accessInfo,omitempty"`
+	AuthWarnings  []string    `json:"authWarnings,omitempty"`
+}
+
+// SingleDriveFileResponse wraps a single file with access info
+type SingleDriveFileResponse struct {
+	File       *DriveFile `json:"file"`
+	AccessInfo *string    `json:"accessInfo,omitempty"`
+}
+
+// DrivePermission represents a single sharing permission (ACL entry)
+type DrivePermission struct {
+	ID           string  `json:"id"`
+	Type         string  `json:"type"`
+	Role         string  `json:"role"`
+	EmailAddress *string `json:"emailAddress,omitempty"`
+	Domain       *string `json:"domain,omitempty"`
+	DisplayName  *string `json:"displayName,omitempty"`
+}
+
+// DrivePermissionsResponse is the response for file permissions
+type DrivePermissionsResponse struct {
+	Permissions []DrivePermission `json:"permissions"`
+	AccessInfo  *string           `json:"accessInfo,omitempty"`
+}
+
+// DriveFileLinkResponse is the response for file download/export links
+type DriveFileLinkResponse struct {
+	Success               bool              `json:"success"`
+	WebViewLink           *string           `json:"webViewLink,omitempty"`
+	DownloadUrl           *string           `json:"downloadUrl,omitempty"`
+	ExportLinks           map[string]string `json:"exportLinks,omitempty"`
+	FileName              *string           `json:"fileName,omitempty"`
+	MimeType              *string           `json:"mimeType,omitempty"`
+	Size                  *int64            `json:"size,omitempty"`
+	IsGoogleWorkspaceFile bool              `json:"isGoogleWorkspaceFile"`
+	ErrorMessage          *string           `json:"errorMessage,omitempty"`
+	ErrorCode             *string           `json:"errorCode,omitempty"`
+}
+
+// DriveOperationResult is the response for mutating drive operations
+type DriveOperationResult struct {
+	Success      bool    `json:"success"`
+	FileID       *string `json:"fileId,omitempty"`
+	ErrorMessage *string `json:"errorMessage,omitempty"`
+	ErrorCode    *string `json:"errorCode,omitempty"`
+}
+
+// DriveListParams holds parameters for drive file list/search queries
+type DriveListParams struct {
+	Q              string
+	FolderID       string
+	MimeType       string
+	Name           string
+	TrashedOnly    bool
+	SharedWithMe   bool
+	ModifiedAfter  string
+	ModifiedBefore string
+	Limit          int
+	PageToken      string
+	OrderBy        string
+}
+
+// CreateFolderRequest represents a request to create a new folder
+type CreateFolderRequest struct {
+	Name           string  `json:"name"`
+	ParentFolderID *string `json:"parentFolderId,omitempty"`
+	Description    *string `json:"description,omitempty"`
+}
+
+// RenameFileRequest represents a request to rename a file or folder
+type RenameFileRequest struct {
+	NewName string `json:"newName"`
+}
+
+// MoveFileRequest represents a request to move a file to another folder
+type MoveFileRequest struct {
+	DestinationFolderID string `json:"destinationFolderId"`
+}
+
+// ShareFileRequest represents a request to share a file
+type ShareFileRequest struct {
+	Type             string  `json:"type"`
+	Role             string  `json:"role"`
+	EmailAddress     *string `json:"emailAddress,omitempty"`
+	Domain           *string `json:"domain,omitempty"`
+	SendNotification *bool   `json:"sendNotification,omitempty"`
+	Message          *string `json:"message,omitempty"`
+}
+
+// ==================== DOCS TYPES ====================
+
+// DocContentResponse is the response for reading a Google Doc
+type DocContentResponse struct {
+	PlainText         *string     `json:"plainText,omitempty"`
+	StructuredContent interface{} `json:"structuredContent,omitempty"`
+	Title             *string     `json:"title,omitempty"`
+	AccessInfo        *string     `json:"accessInfo,omitempty"`
+}
+
+// DocEditOperation represents a single text editing operation on a Google Doc
+type DocEditOperation struct {
+	Type      string  `json:"type"`
+	Text      *string `json:"text,omitempty"`
+	Index     *int    `json:"index,omitempty"`
+	Find      *string `json:"find,omitempty"`
+	Replace   *string `json:"replace,omitempty"`
+	MatchCase *bool   `json:"matchCase,omitempty"`
+}
+
+// EditDocRequest represents a request to edit a Google Doc
+type EditDocRequest struct {
+	Operations []DocEditOperation `json:"operations"`
+}
+
+// ==================== SHEETS TYPES ====================
+
+// SheetTabInfo represents metadata for a single sheet tab
+type SheetTabInfo struct {
+	SheetID     int    `json:"sheetId"`
+	Title       string `json:"title"`
+	RowCount    int    `json:"rowCount"`
+	ColumnCount int    `json:"columnCount"`
+}
+
+// SheetMetadataResponse is the response for spreadsheet metadata
+type SheetMetadataResponse struct {
+	SpreadsheetID string         `json:"spreadsheetId"`
+	Title         *string        `json:"title,omitempty"`
+	Sheets        []SheetTabInfo `json:"sheets"`
+	AccessInfo    *string        `json:"accessInfo,omitempty"`
+}
+
+// SheetValuesResponse is the response for reading sheet cell values
+type SheetValuesResponse struct {
+	Range      string          `json:"range"`
+	Values     [][]interface{} `json:"values"`
+	AccessInfo *string         `json:"accessInfo,omitempty"`
+}
+
+// WriteSheetValuesRequest represents a request to write cell values
+type WriteSheetValuesRequest struct {
+	Range            string          `json:"range"`
+	Values           [][]interface{} `json:"values"`
+	ValueInputOption string          `json:"valueInputOption,omitempty"`
+}
+
+// AppendSheetRowsRequest represents a request to append rows to a sheet
+type AppendSheetRowsRequest struct {
+	Range            string          `json:"range"`
+	Values           [][]interface{} `json:"values"`
+	ValueInputOption string          `json:"valueInputOption,omitempty"`
+}

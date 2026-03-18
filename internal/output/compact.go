@@ -168,6 +168,42 @@ func compactEmailMsg(email api.Email, opts CompactOptions) api.Email {
 	return email
 }
 
+// CompactDriveFilesResponse applies compact transformations to a drive files response
+func CompactDriveFilesResponse(resp *api.DriveFilesResponse, opts CompactOptions) *api.DriveFilesResponse {
+	if resp == nil {
+		return nil
+	}
+
+	compacted := &api.DriveFilesResponse{
+		Files:         make([]api.DriveFile, len(resp.Files)),
+		NextPageToken: resp.NextPageToken,
+		HasMore:       resp.HasMore,
+		AccessInfo:    resp.AccessInfo,
+		AuthWarnings:  resp.AuthWarnings,
+	}
+
+	for i, f := range resp.Files {
+		cf := f
+		// Truncate name
+		if cf.Name != nil && len(*cf.Name) > 40 {
+			s := (*cf.Name)[:37] + "..."
+			cf.Name = &s
+		}
+		// First owner only
+		if len(cf.Owners) > 1 {
+			cf.Owners = cf.Owners[:1]
+		}
+		// Strip noisy fields
+		cf.SharedWith = nil
+		cf.Labels = nil
+		cf.Description = nil
+		cf.DownloadLink = nil
+		compacted.Files[i] = cf
+	}
+
+	return compacted
+}
+
 // CompactThreadResponse applies compact transformations to a thread response
 func CompactThreadResponse(resp *api.ThreadResponse, opts CompactOptions) *api.ThreadResponse {
 	if resp == nil {

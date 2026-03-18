@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -520,6 +521,418 @@ func (c *Client) ModifyEmail(emailID string, req ModifyEmailRequest) error {
 	path := "/api/access/email/messages/" + emailID
 	_, err := c.Patch(path, req)
 	return err
+}
+
+// Put sends a PUT request with JSON body
+func (c *Client) Put(path string, data interface{}) ([]byte, error) {
+	body, err := json.Marshal(data)
+	if err != nil {
+		return nil, err
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	resp, err := c.doWithRetry(ctx, "PUT", path, body)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		return nil, apierr.ParseAPIError(resp)
+	}
+
+	return io.ReadAll(resp.Body)
+}
+
+// PostRaw sends a POST request with a raw byte body and specified Content-Type
+func (c *Client) PostRaw(path string, body []byte, contentType string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	var bodyReader io.Reader
+	if body != nil {
+		bodyReader = bytes.NewReader(body)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", c.baseURL+path, bodyReader)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", contentType)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		return nil, apierr.ParseAPIError(resp)
+	}
+
+	return io.ReadAll(resp.Body)
+}
+
+// ==================== DRIVE METHODS ====================
+
+const driveBase = "/api/access/drive"
+
+// GetDriveFiles returns drive files matching the given parameters
+func (c *Client) GetDriveFiles(params DriveListParams) (*DriveFilesResponse, error) {
+	v := url.Values{}
+	if params.Q != "" {
+		v.Set("q", params.Q)
+	}
+	if params.FolderID != "" {
+		v.Set("folderId", params.FolderID)
+	}
+	if params.MimeType != "" {
+		v.Set("mimeType", params.MimeType)
+	}
+	if params.Name != "" {
+		v.Set("name", params.Name)
+	}
+	if params.TrashedOnly {
+		v.Set("trashedOnly", "true")
+	}
+	if params.SharedWithMe {
+		v.Set("sharedWithMe", "true")
+	}
+	if params.ModifiedAfter != "" {
+		v.Set("modifiedAfter", params.ModifiedAfter)
+	}
+	if params.ModifiedBefore != "" {
+		v.Set("modifiedBefore", params.ModifiedBefore)
+	}
+	if params.Limit > 0 {
+		v.Set("limit", strconv.Itoa(params.Limit))
+	}
+	if params.PageToken != "" {
+		v.Set("pageToken", params.PageToken)
+	}
+	if params.OrderBy != "" {
+		v.Set("orderBy", params.OrderBy)
+	}
+
+	path := driveBase + "/files"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+
+	body, err := c.Get(path)
+	if err != nil {
+		return nil, err
+	}
+
+	var response DriveFilesResponse
+	if err := json.Unmarshal(body, &response); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return &response, nil
+}
+
+// GetAllDriveFiles fetches all drive files by auto-paginating (safety cap: 50 pages)
+func (c *Client) GetAllDriveFiles(params DriveListParams) (*DriveFilesResponse, error) {
+	var allFiles []DriveFile
+	var accessInfo *string
+	var authWarnings []string
+	const maxPages = 50
+
+	for page := 0; page < maxPages; page++ {
+		resp, err := c.GetDriveFiles(params)
+		if err != nil {
+			return nil, err
+		}
+
+		allFiles = append(allFiles, resp.Files...)
+		accessInfo = resp.AccessInfo
+		authWarnings = resp.AuthWarnings
+
+		if !resp.HasMore || resp.NextPageToken == nil || *resp.NextPageToken == "" {
+			return &DriveFilesResponse{
+				Files:        allFiles,
+				HasMore:      false,
+				AccessInfo:   accessInfo,
+				AuthWarnings: authWarnings,
+			}, nil
+		}
+
+		params.PageToken = *resp.NextPageToken
+	}
+
+	// Safety cap reached
+	return &DriveFilesResponse{
+		Files:        allFiles,
+		HasMore:      true,
+		AccessInfo:   accessInfo,
+		AuthWarnings: authWarnings,
+	}, nil
+}
+
+// GetDriveFile returns metadata for a single drive file
+func (c *Client) GetDriveFile(fileID string) (*SingleDriveFileResponse, error) {
+	path := driveBase + "/files/" + url.PathEscape(fileID)
+	body, err := c.Get(path)
+	if err != nil {
+		return nil, err
+	}
+
+	var response SingleDriveFileResponse
+	if err := json.Unmarshal(body, &response); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return &response, nil
+}
+
+// GetDriveFileLinks returns view/download/export links for a file
+func (c *Client) GetDriveFileLinks(fileID string) (*DriveFileLinkResponse, error) {
+	path := driveBase + "/files/" + url.PathEscape(fileID) + "/download"
+	body, err := c.Get(path)
+	if err != nil {
+		return nil, err
+	}
+
+	var response DriveFileLinkResponse
+	if err := json.Unmarshal(body, &response); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return &response, nil
+}
+
+// GetDrivePermissions returns the sharing permissions for a file
+func (c *Client) GetDrivePermissions(fileID string) (*DrivePermissionsResponse, error) {
+	path := driveBase + "/files/" + url.PathEscape(fileID) + "/permissions"
+	body, err := c.Get(path)
+	if err != nil {
+		return nil, err
+	}
+
+	var response DrivePermissionsResponse
+	if err := json.Unmarshal(body, &response); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return &response, nil
+}
+
+// UploadDriveFile uploads a file to Google Drive. Pass an empty body to create a Google Workspace file.
+func (c *Client) UploadDriveFile(fileName, mimeType, folderID, description string, body []byte) (*DriveOperationResult, error) {
+	v := url.Values{}
+	v.Set("fileName", fileName)
+	if mimeType != "" {
+		v.Set("mimeType", mimeType)
+	}
+	if folderID != "" {
+		v.Set("folderId", folderID)
+	}
+	if description != "" {
+		v.Set("description", description)
+	}
+
+	path := driveBase + "/files/upload?" + v.Encode()
+	contentType := "application/octet-stream"
+	if mimeType != "" {
+		contentType = mimeType
+	}
+
+	respBody, err := c.PostRaw(path, body, contentType)
+	if err != nil {
+		return nil, err
+	}
+
+	var result DriveOperationResult
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return &result, nil
+}
+
+// CreateDriveFolder creates a new folder in Google Drive
+func (c *Client) CreateDriveFolder(req CreateFolderRequest) (*DriveOperationResult, error) {
+	respBody, err := c.Post(driveBase+"/folders", req)
+	if err != nil {
+		return nil, err
+	}
+
+	var result DriveOperationResult
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return &result, nil
+}
+
+// RenameDriveFile renames a file or folder
+func (c *Client) RenameDriveFile(fileID string, req RenameFileRequest) (*DriveOperationResult, error) {
+	path := driveBase + "/files/" + url.PathEscape(fileID) + "/rename"
+	respBody, err := c.Patch(path, req)
+	if err != nil {
+		return nil, err
+	}
+
+	var result DriveOperationResult
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return &result, nil
+}
+
+// MoveDriveFile moves a file to a different folder
+func (c *Client) MoveDriveFile(fileID string, req MoveFileRequest) (*DriveOperationResult, error) {
+	path := driveBase + "/files/" + url.PathEscape(fileID) + "/move"
+	respBody, err := c.Patch(path, req)
+	if err != nil {
+		return nil, err
+	}
+
+	var result DriveOperationResult
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return &result, nil
+}
+
+// DeleteDriveFile moves a file to trash (204 No Content on success)
+func (c *Client) DeleteDriveFile(fileID string) error {
+	path := driveBase + "/files/" + url.PathEscape(fileID)
+	_, err := c.Delete(path)
+	return err
+}
+
+// ShareDriveFile shares a file with a user, group, domain, or anyone
+func (c *Client) ShareDriveFile(fileID string, req ShareFileRequest) (*DriveOperationResult, error) {
+	path := driveBase + "/files/" + url.PathEscape(fileID) + "/share"
+	respBody, err := c.Post(path, req)
+	if err != nil {
+		return nil, err
+	}
+
+	var result DriveOperationResult
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return &result, nil
+}
+
+// ==================== DOCS METHODS ====================
+
+// GetDocContent returns the content of a Google Doc
+func (c *Client) GetDocContent(fileID, format string) (*DocContentResponse, error) {
+	v := url.Values{}
+	if format != "" && format != "text" {
+		v.Set("format", format)
+	}
+
+	path := driveBase + "/docs/" + url.PathEscape(fileID) + "/content"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+
+	body, err := c.Get(path)
+	if err != nil {
+		return nil, err
+	}
+
+	var response DocContentResponse
+	if err := json.Unmarshal(body, &response); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return &response, nil
+}
+
+// EditDoc applies text editing operations to a Google Doc
+func (c *Client) EditDoc(fileID string, req EditDocRequest) (*DriveOperationResult, error) {
+	path := driveBase + "/docs/" + url.PathEscape(fileID) + "/edit"
+	respBody, err := c.Post(path, req)
+	if err != nil {
+		return nil, err
+	}
+
+	var result DriveOperationResult
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return &result, nil
+}
+
+// ==================== SHEETS METHODS ====================
+
+// GetSheetMetadata returns spreadsheet title and sheet tab info
+func (c *Client) GetSheetMetadata(fileID string) (*SheetMetadataResponse, error) {
+	path := driveBase + "/sheets/" + url.PathEscape(fileID)
+	body, err := c.Get(path)
+	if err != nil {
+		return nil, err
+	}
+
+	var response SheetMetadataResponse
+	if err := json.Unmarshal(body, &response); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return &response, nil
+}
+
+// ReadSheetValues reads cell values from a range in a spreadsheet
+func (c *Client) ReadSheetValues(fileID, rangeStr string) (*SheetValuesResponse, error) {
+	v := url.Values{}
+	v.Set("range", rangeStr)
+
+	path := driveBase + "/sheets/" + url.PathEscape(fileID) + "/values?" + v.Encode()
+	body, err := c.Get(path)
+	if err != nil {
+		return nil, err
+	}
+
+	var response SheetValuesResponse
+	if err := json.Unmarshal(body, &response); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return &response, nil
+}
+
+// WriteSheetValues writes cell values to a range in a spreadsheet (overwrites)
+func (c *Client) WriteSheetValues(fileID string, req WriteSheetValuesRequest) (*DriveOperationResult, error) {
+	path := driveBase + "/sheets/" + url.PathEscape(fileID) + "/values"
+	respBody, err := c.Put(path, req)
+	if err != nil {
+		return nil, err
+	}
+
+	var result DriveOperationResult
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return &result, nil
+}
+
+// AppendSheetRows appends rows after the last row with data in the specified range
+func (c *Client) AppendSheetRows(fileID string, req AppendSheetRowsRequest) (*DriveOperationResult, error) {
+	path := driveBase + "/sheets/" + url.PathEscape(fileID) + "/values:append"
+	respBody, err := c.Post(path, req)
+	if err != nil {
+		return nil, err
+	}
+
+	var result DriveOperationResult
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return &result, nil
 }
 
 // GetAllEvents fetches all events by auto-paginating through results
