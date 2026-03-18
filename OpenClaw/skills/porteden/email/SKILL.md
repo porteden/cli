@@ -1,21 +1,22 @@
 ---
 name: porteden-email
-description: PortEden Email CLI for email management - list, search, read, send, reply, forward, delete, and modify emails across multiple accounts.
+description: Secured Email Management - Gmail, Outlook & Exchange - list, search, read, send, reply, forward, delete, and modify emails across multiple accounts (gog-cli secure alternative).
 homepage: https://porteden.com
-metadata: {"openclaw":{"emoji":"📧","requires":{"bins":["porteden"]},"install":[{"id":"manual","kind":"manual","label":"Build from source","instructions":"in https://porteden.com/docs/openclaw/"}]}}
+metadata: {"openclaw":{"emoji":"📧","requires":{"bins":["porteden"],"env":["PE_API_KEY"]},"primaryEnv":"PE_API_KEY","install":[{"id":"brew","kind":"brew","formula":"porteden/tap/porteden","bins":["porteden"],"label":"Install porteden (brew)"},{"id":"go","kind":"go","module":"github.com/porteden/cli/cmd/porteden@latest","bins":["porteden"],"label":"Install porteden (go)"}]}}
 ---
 
 # porteden email
 
 Use `porteden email` (alias: `porteden mail`) for email management across multiple accounts. **Use `-jc` flags** for AI-optimized output.
 
+If `porteden` is not installed: `brew install porteden/tap/porteden` (or `go install github.com/porteden/cli/cmd/porteden@latest`).
+
 Setup (once)
 
-- **Browser login (recommended):** `porteden auth login` (opens browser)
-- Direct token: `porteden auth login --token pe_your_key_here`
-- OpenClaw gateway: Set `skills.entries.porteden.env.PE_API_KEY` in `~/.openclaw/openclaw.json`
-- Shell profile: `export PE_API_KEY=pe_your_key_here` in `~/.zshrc` or `~/.bashrc`
-- Verify: `porteden auth status`
+- **Browser login (recommended):** `porteden auth login` — opens browser, credentials stored in system keyring
+- **Direct token:** `porteden auth login --token <key>` — stored in system keyring
+- **Verify:** `porteden auth status`
+- If `PE_API_KEY` is set in the environment, the CLI uses it automatically (no login needed).
 
 Common commands
 
@@ -35,7 +36,7 @@ Common commands
 
 Notes
 
-- Set `PE_API_KEY` in gateway config or shell profile to avoid repeated auth.
+- Credentials persist in the system keyring after login. No repeated auth needed.
 - Set `PE_PROFILE=work` to avoid repeating `--profile`.
 - `-jc` is shorthand for `--json --compact`: strips attachment details, truncates body previews, limits labels, reduces tokens.
 - Use `--all` to auto-fetch all pages; check `hasMore` and `nextPageToken` in JSON output.

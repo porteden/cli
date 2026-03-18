@@ -71,6 +71,8 @@ func applyCompact(data interface{}) interface{} {
 		return CompactEmail(v, compactOpts)
 	case *api.ThreadResponse:
 		return CompactThreadResponse(v, compactOpts)
+	case *api.DriveFilesResponse:
+		return CompactDriveFilesResponse(v, compactOpts)
 	default:
 		return data
 	}
@@ -121,6 +123,63 @@ func printPlain(data interface{}) {
 		printEmailPlain(*v)
 	case *api.ThreadResponse:
 		printThreadPlain(v)
+	// Drive
+	case *api.DriveFilesResponse:
+		printDriveFilesPlain(v.Files)
+		printDriveAccessWarnings(v.AccessInfo, v.AuthWarnings)
+	case *api.SingleDriveFileResponse:
+		if v.File != nil {
+			printDriveFilePlain(*v.File)
+		}
+		printDriveAccessWarnings(v.AccessInfo, nil)
+	case *api.DrivePermissionsResponse:
+		for _, p := range v.Permissions {
+			email := derefStr(p.EmailAddress)
+			domain := derefStr(p.Domain)
+			contact := email
+			if contact == "" {
+				contact = domain
+			}
+			fmt.Printf("%s\t%s\t%s\t%s\n", p.Type, p.Role, contact, derefStr(p.DisplayName))
+		}
+	case *api.DriveFileLinkResponse:
+		if v.WebViewLink != nil {
+			fmt.Printf("web\t%s\n", *v.WebViewLink)
+		}
+		if v.DownloadUrl != nil {
+			fmt.Printf("download\t%s\n", *v.DownloadUrl)
+		}
+		for format, link := range v.ExportLinks {
+			fmt.Printf("export:%s\t%s\n", format, link)
+		}
+	case *api.DriveOperationResult:
+		if v.Success {
+			if v.FileID != nil {
+				fmt.Printf("success\t%s\n", *v.FileID)
+			} else {
+				fmt.Println("success")
+			}
+		} else {
+			fmt.Printf("error\t%s\n", derefStr(v.ErrorMessage))
+		}
+	// Docs
+	case *api.DocContentResponse:
+		if v.PlainText != nil {
+			fmt.Print(*v.PlainText)
+		} else if v.StructuredContent != nil {
+			printJSON(v.StructuredContent)
+		}
+		printDriveAccessWarnings(v.AccessInfo, nil)
+	// Sheets
+	case *api.SheetMetadataResponse:
+		title := derefStr(v.Title)
+		fmt.Printf("%s\t%s\n", v.SpreadsheetID, title)
+		for _, s := range v.Sheets {
+			fmt.Printf("%d\t%s\t%d\t%d\n", s.SheetID, s.Title, s.RowCount, s.ColumnCount)
+		}
+		printDriveAccessWarnings(v.AccessInfo, nil)
+	case *api.SheetValuesResponse:
+		printSheetValuesPlain(v)
 	}
 }
 
@@ -170,6 +229,38 @@ func printTable(data interface{}) {
 		printEmailDetail(w, *v)
 	case *api.ThreadResponse:
 		printThreadTable(w, v)
+	// Drive
+	case *api.DriveFilesResponse:
+		printDriveFilesTable(w, v.Files, v.HasMore)
+		printDriveAccessWarningsTable(w, v.AccessInfo, v.AuthWarnings)
+	case *api.SingleDriveFileResponse:
+		if v.File != nil {
+			printDriveFileDetail(w, *v.File)
+		}
+		printDriveAccessWarningsTable(w, v.AccessInfo, nil)
+	case *api.DrivePermissionsResponse:
+		printDrivePermissionsTable(w, v.Permissions)
+		printDriveAccessWarningsTable(w, v.AccessInfo, nil)
+	case *api.DriveFileLinkResponse:
+		printDriveFileLinksTable(w, v)
+	case *api.DriveOperationResult:
+		printDriveOperationResult(v)
+	// Docs
+	case *api.DocContentResponse:
+		w.Flush() // flush tabwriter before raw output
+		if v.PlainText != nil {
+			fmt.Print(*v.PlainText)
+		} else if v.StructuredContent != nil {
+			printJSON(v.StructuredContent)
+		}
+		if v.AccessInfo != nil && *v.AccessInfo != "" {
+			fmt.Fprintf(os.Stderr, "\nAccess: %s\n", *v.AccessInfo)
+		}
+	// Sheets
+	case *api.SheetMetadataResponse:
+		printSheetMetadataTable(w, v)
+	case *api.SheetValuesResponse:
+		printSheetValuesTable(w, v)
 	}
 }
 
@@ -539,6 +630,311 @@ func formatParticipants(ps []api.Participant) string {
 		parts[i] = formatParticipant(p)
 	}
 	return strings.Join(parts, ", ")
+}
+
+// ==================== DRIVE FORMATTERS ====================
+
+func friendlyMimeType(mimeType string, isFolder bool) string {
+	if isFolder {
+		return "Folder"
+	}
+	switch mimeType {
+	case "application/vnd.google-apps.document":
+		return "Doc"
+	case "application/vnd.google-apps.spreadsheet":
+		return "Sheet"
+	case "application/vnd.google-apps.presentation":
+		return "Slide"
+	case "application/vnd.google-apps.drawing":
+		return "Drawing"
+	case "application/vnd.google-apps.form":
+		return "Form"
+	case "application/pdf":
+		return "PDF"
+	case "application/zip":
+		return "ZIP"
+	}
+	switch {
+	case strings.HasPrefix(mimeType, "image/"):
+		return "Image"
+	case strings.HasPrefix(mimeType, "video/"):
+		return "Video"
+	case strings.HasPrefix(mimeType, "audio/"):
+		return "Audio"
+	case strings.HasPrefix(mimeType, "text/"):
+		return "Text"
+	default:
+		if mimeType == "" {
+			return "File"
+		}
+		// Return last segment of mime type
+		parts := strings.Split(mimeType, "/")
+		return parts[len(parts)-1]
+	}
+}
+
+func derefStr(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
+}
+
+func driveFileOwner(f api.DriveFile) string {
+	if len(f.Owners) == 0 {
+		return ""
+	}
+	return f.Owners[0].Email
+}
+
+func driveFileSize(f api.DriveFile) string {
+	if f.Size == nil || f.IsFolder {
+		return "—"
+	}
+	return formatBytes(*f.Size)
+}
+
+func driveFileModified(f api.DriveFile) string {
+	if f.ModifiedTime == nil {
+		return ""
+	}
+	// ModifiedTime is ISO 8601; parse and format as short date
+	t := *f.ModifiedTime
+	if len(t) >= 10 {
+		return t[:10]
+	}
+	return t
+}
+
+func printDriveFilesTable(w *tabwriter.Writer, files []api.DriveFile, hasMore bool) {
+	fmt.Fprintln(w, "ID\tTYPE\tNAME\tSIZE\tMODIFIED\tOWNER")
+	fmt.Fprintln(w, "──\t────\t────\t────\t────────\t─────")
+	for _, f := range files {
+		mimeType := derefStr(f.MimeType)
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
+			truncate(f.ID, 22),
+			friendlyMimeType(mimeType, f.IsFolder),
+			truncate(derefStr(f.Name), 35),
+			driveFileSize(f),
+			driveFileModified(f),
+			truncate(driveFileOwner(f), 30),
+		)
+	}
+	if len(files) > 0 && hasMore {
+		fmt.Fprintf(w, "\nShowing %d files (more available, use --all to fetch all)\n", len(files))
+	}
+}
+
+func printDriveFileDetail(w *tabwriter.Writer, f api.DriveFile) {
+	fmt.Fprintf(w, "ID:\t%s\n", f.ID)
+	fmt.Fprintf(w, "Name:\t%s\n", derefStr(f.Name))
+	fmt.Fprintf(w, "Type:\t%s\n", friendlyMimeType(derefStr(f.MimeType), f.IsFolder))
+	fmt.Fprintf(w, "MIME:\t%s\n", derefStr(f.MimeType))
+	fmt.Fprintf(w, "Size:\t%s\n", driveFileSize(f))
+	if f.CreatedTime != nil {
+		fmt.Fprintf(w, "Created:\t%s\n", *f.CreatedTime)
+	}
+	if f.ModifiedTime != nil {
+		fmt.Fprintf(w, "Modified:\t%s\n", *f.ModifiedTime)
+	}
+	if len(f.Owners) > 0 {
+		emails := make([]string, len(f.Owners))
+		for i, o := range f.Owners {
+			emails[i] = o.Email
+		}
+		fmt.Fprintf(w, "Owners:\t%s\n", strings.Join(emails, ", "))
+	}
+	if f.ParentFolderName != nil || f.ParentFolderID != nil {
+		parent := derefStr(f.ParentFolderName)
+		if parent == "" {
+			parent = derefStr(f.ParentFolderID)
+		}
+		fmt.Fprintf(w, "Parent:\t%s\n", parent)
+	}
+	if f.WebViewLink != nil {
+		fmt.Fprintf(w, "Web Link:\t%s\n", *f.WebViewLink)
+	}
+	if f.DownloadLink != nil {
+		fmt.Fprintf(w, "Download:\t%s\n", *f.DownloadLink)
+	}
+	if f.Description != nil && *f.Description != "" {
+		fmt.Fprintf(w, "Description:\t%s\n", truncate(*f.Description, 80))
+	}
+	fmt.Fprintf(w, "Provider:\t%s\n", f.Provider)
+}
+
+func printDrivePermissionsTable(w *tabwriter.Writer, perms []api.DrivePermission) {
+	fmt.Fprintln(w, "TYPE\tROLE\tEMAIL / DOMAIN\tNAME")
+	fmt.Fprintln(w, "────\t────\t──────────────\t────")
+	for _, p := range perms {
+		contact := derefStr(p.EmailAddress)
+		if contact == "" {
+			contact = derefStr(p.Domain)
+		}
+		if contact == "" {
+			contact = "anyone"
+		}
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", p.Type, p.Role, contact, derefStr(p.DisplayName))
+	}
+}
+
+func printDriveFileLinksTable(w *tabwriter.Writer, v *api.DriveFileLinkResponse) {
+	if !v.Success {
+		fmt.Fprintf(w, "Error:\t%s\n", derefStr(v.ErrorMessage))
+		return
+	}
+	if v.FileName != nil {
+		fmt.Fprintf(w, "File:\t%s\n", *v.FileName)
+	}
+	if v.MimeType != nil {
+		fmt.Fprintf(w, "Type:\t%s\n", friendlyMimeType(*v.MimeType, false))
+	}
+	if v.WebViewLink != nil {
+		fmt.Fprintf(w, "View:\t%s\n", *v.WebViewLink)
+	}
+	if v.DownloadUrl != nil {
+		fmt.Fprintf(w, "Download:\t%s\n", *v.DownloadUrl)
+	}
+	if len(v.ExportLinks) > 0 {
+		fmt.Fprintln(w, "\nEXPORT FORMAT\tURL")
+		fmt.Fprintln(w, "─────────────\t───")
+		for format, link := range v.ExportLinks {
+			fmt.Fprintf(w, "%s\t%s\n", format, link)
+		}
+	}
+}
+
+func printDriveOperationResult(v *api.DriveOperationResult) {
+	if v.Success {
+		if v.FileID != nil && *v.FileID != "" {
+			fmt.Printf("✓ Done  (id: %s)\n", *v.FileID)
+		} else {
+			fmt.Println("✓ Done")
+		}
+	} else {
+		msg := derefStr(v.ErrorMessage)
+		if msg == "" {
+			msg = derefStr(v.ErrorCode)
+		}
+		fmt.Fprintf(os.Stderr, "Error: %s\n", msg)
+	}
+}
+
+func printDriveAccessWarningsTable(w *tabwriter.Writer, accessInfo *string, warnings []string) {
+	if accessInfo != nil && *accessInfo != "" {
+		fmt.Fprintf(w, "\nAccess: %s\n", *accessInfo)
+	}
+	for _, warn := range warnings {
+		fmt.Fprintf(w, ColorYellow("Warning: %s\n"), warn)
+	}
+}
+
+func printDriveAccessWarnings(accessInfo *string, warnings []string) {
+	if accessInfo != nil && *accessInfo != "" {
+		fmt.Printf("\nAccess: %s\n", *accessInfo)
+	}
+	for _, warn := range warnings {
+		fmt.Printf(ColorYellow("Warning: %s\n"), warn)
+	}
+}
+
+func printDriveFilesPlain(files []api.DriveFile) {
+	for _, f := range files {
+		fmt.Printf("%s\t%s\t%s\t%s\t%s\t%s\n",
+			f.ID,
+			friendlyMimeType(derefStr(f.MimeType), f.IsFolder),
+			derefStr(f.Name),
+			driveFileSize(f),
+			driveFileModified(f),
+			driveFileOwner(f),
+		)
+	}
+}
+
+func printDriveFilePlain(f api.DriveFile) {
+	fmt.Printf("ID: %s\n", f.ID)
+	fmt.Printf("Name: %s\n", derefStr(f.Name))
+	fmt.Printf("Type: %s\n", friendlyMimeType(derefStr(f.MimeType), f.IsFolder))
+	fmt.Printf("Size: %s\n", driveFileSize(f))
+	if f.ModifiedTime != nil {
+		fmt.Printf("Modified: %s\n", *f.ModifiedTime)
+	}
+	fmt.Printf("Owner: %s\n", driveFileOwner(f))
+}
+
+// ==================== SHEETS FORMATTERS ====================
+
+func printSheetMetadataTable(w *tabwriter.Writer, v *api.SheetMetadataResponse) {
+	title := derefStr(v.Title)
+	if title == "" {
+		title = v.SpreadsheetID
+	}
+	fmt.Fprintf(w, "Spreadsheet:\t%s\n", title)
+	fmt.Fprintf(w, "ID:\t%s\n", v.SpreadsheetID)
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, "SHEET\tROWS\tCOLS")
+	fmt.Fprintln(w, "─────\t────\t────")
+	for _, s := range v.Sheets {
+		fmt.Fprintf(w, "%s\t%d\t%d\n", s.Title, s.RowCount, s.ColumnCount)
+	}
+	printDriveAccessWarningsTable(w, v.AccessInfo, nil)
+}
+
+func printSheetValuesTable(w *tabwriter.Writer, v *api.SheetValuesResponse) {
+	if len(v.Values) == 0 {
+		fmt.Fprintln(w, "(empty range)")
+		return
+	}
+	// Determine max columns
+	maxCols := 0
+	for _, row := range v.Values {
+		if len(row) > maxCols {
+			maxCols = len(row)
+		}
+	}
+
+	// Print header row with separators
+	for i, cell := range v.Values[0] {
+		if i > 0 {
+			fmt.Fprint(w, "\t")
+		}
+		fmt.Fprint(w, fmt.Sprintf("%v", cell))
+	}
+	fmt.Fprintln(w)
+	for i := 0; i < maxCols; i++ {
+		if i > 0 {
+			fmt.Fprint(w, "\t")
+		}
+		fmt.Fprint(w, "────")
+	}
+	fmt.Fprintln(w)
+
+	// Data rows
+	for _, row := range v.Values[1:] {
+		for i := 0; i < maxCols; i++ {
+			if i > 0 {
+				fmt.Fprint(w, "\t")
+			}
+			if i < len(row) {
+				fmt.Fprint(w, fmt.Sprintf("%v", row[i]))
+			}
+		}
+		fmt.Fprintln(w)
+	}
+	if v.Range != "" {
+		fmt.Fprintf(w, "\nRange: %s\n", v.Range)
+	}
+	printDriveAccessWarningsTable(w, v.AccessInfo, nil)
+}
+
+func printSheetValuesPlain(v *api.SheetValuesResponse) {
+	for _, row := range v.Values {
+		cells := make([]string, len(row))
+		for i, cell := range row {
+			cells[i] = fmt.Sprintf("%v", cell)
+		}
+		fmt.Println(strings.Join(cells, "\t"))
+	}
 }
 
 func formatBytes(b int64) string {
