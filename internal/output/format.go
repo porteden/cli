@@ -898,7 +898,7 @@ func printSheetValuesTable(w *tabwriter.Writer, v *api.SheetValuesResponse) {
 		if i > 0 {
 			fmt.Fprint(w, "\t")
 		}
-		fmt.Fprint(w, fmt.Sprintf("%v", cell))
+		fmt.Fprintf(w, "%v", cell)
 	}
 	fmt.Fprintln(w)
 	for i := 0; i < maxCols; i++ {
@@ -916,7 +916,7 @@ func printSheetValuesTable(w *tabwriter.Writer, v *api.SheetValuesResponse) {
 				fmt.Fprint(w, "\t")
 			}
 			if i < len(row) {
-				fmt.Fprint(w, fmt.Sprintf("%v", row[i]))
+				fmt.Fprintf(w, "%v", row[i])
 			}
 		}
 		fmt.Fprintln(w)
