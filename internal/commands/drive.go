@@ -95,6 +95,127 @@ var driveFileCmd = &cobra.Command{
 	},
 }
 
+// ==================== READ CONTENT ====================
+
+var driveContentCmd = &cobra.Command{
+	Use:   "content <fileId>",
+	Short: "Read the text content of a file",
+	Long: `Returns the text content of a file in one call.
+
+- Google Docs are exported to text/plain and returned inline.
+- text-like files (text/*, JSON, XML, YAML, CSV) are returned as-is.
+- Spreadsheets steer to: porteden sheets content <fileId>
+- Presentations steer to: porteden slides read <fileId>
+- Binary files return readable=false with a webViewLink — open in browser.
+
+The HTTP status is always 200; readability is conveyed via the response.`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		client, err := getClient(cmd)
+		if err != nil {
+			return err
+		}
+
+		result, err := client.GetDriveFileContent(args[0])
+		if err != nil {
+			return formatError(err)
+		}
+
+		output.PrintWithOptions(result, getOutputFormat(cmd), output.PrintOptions{
+			Compact: IsCompactMode(),
+		})
+		return nil
+	},
+}
+
+// ==================== CREATE (inline content) ====================
+
+var driveCreateCmd = &cobra.Command{
+	Use:   "create",
+	Short: "Create a file with inline UTF-8 text content",
+	Long: `Create a new file in Google Drive with inline UTF-8 text content (no binary stream).
+
+For Workspace target MIME types (document, spreadsheet, presentation) Drive
+auto-imports the supplied content. For text/JSON/XML/YAML/CSV the file is
+stored as-is. Use ` + "`porteden drive upload`" + ` for binary files.
+
+Examples:
+  porteden drive create --name "Notes.md" --mime-type text/markdown --content "# Notes"
+  porteden drive create --name "Sprint Plan" --mime-type application/vnd.google-apps.document \
+      --content-file ./sprint-plan.md --content-mime-type text/markdown
+  porteden drive create --name "Data.csv" --mime-type text/csv --content-file ./data.csv`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		name, _ := cmd.Flags().GetString("name")
+		mimeType, _ := cmd.Flags().GetString("mime-type")
+		content, _ := cmd.Flags().GetString("content")
+		contentFile, _ := cmd.Flags().GetString("content-file")
+		contentMime, _ := cmd.Flags().GetString("content-mime-type")
+		folder, _ := cmd.Flags().GetString("folder")
+		description, _ := cmd.Flags().GetString("description")
+
+		if name == "" {
+			return errors.New("--name is required")
+		}
+		if mimeType == "" {
+			return errors.New("--mime-type is required")
+		}
+		if content != "" && contentFile != "" {
+			return errors.New("--content and --content-file are mutually exclusive")
+		}
+		if contentFile != "" {
+			data, err := os.ReadFile(contentFile)
+			if err != nil {
+				return fmt.Errorf("cannot read content file: %w", err)
+			}
+			content = string(data)
+		}
+
+		client, err := getClient(cmd)
+		if err != nil {
+			return err
+		}
+
+		result, err := createDriveFileOrBlank(client, name, mimeType, content, contentMime, folder, description)
+		if err != nil {
+			return formatError(err)
+		}
+
+		output.PrintWithOptions(result, getOutputFormat(cmd), output.PrintOptions{
+			Compact: IsCompactMode(),
+		})
+		return nil
+	},
+}
+
+// buildCreateFileRequest assembles the inline-content create request, leaving
+// optional pointer fields nil when the caller omitted them.
+func buildCreateFileRequest(name, mimeType, content, contentMime, folder, description string) api.CreateDriveFileWithContentRequest {
+	req := api.CreateDriveFileWithContentRequest{
+		Name:     name,
+		MimeType: mimeType,
+		Content:  content,
+	}
+	if contentMime != "" {
+		req.ContentMimeType = &contentMime
+	}
+	if folder != "" {
+		req.FolderID = &folder
+	}
+	if description != "" {
+		req.Description = &description
+	}
+	return req
+}
+
+// createDriveFileOrBlank creates a file via POST /files. The BE's metadata-only
+// branch handles empty / whitespace-only content natively — it issues
+// `files.create` against Drive with no media import, which materialises a real
+// blank Workspace file of the requested target mime. No client-side placeholder
+// is needed.
+func createDriveFileOrBlank(client *api.Client, name, mimeType, content, contentMime, folder, description string) (*api.DriveOperationResult, error) {
+	return client.CreateDriveFile(buildCreateFileRequest(name, mimeType, content, contentMime, folder, description))
+}
+
 // ==================== DOWNLOAD LINKS ====================
 
 var driveDownloadCmd = &cobra.Command{
@@ -470,6 +591,15 @@ func init() {
 	driveUploadCmd.Flags().String("folder", "", "Target folder ID (provider-prefixed)")
 	driveUploadCmd.Flags().String("description", "", "File description")
 
+	// create (inline content) flags
+	driveCreateCmd.Flags().String("name", "", "File name to assign in Drive")
+	driveCreateCmd.Flags().String("mime-type", "", "Target MIME type (e.g., application/vnd.google-apps.document, text/markdown)")
+	driveCreateCmd.Flags().String("content", "", "Inline UTF-8 content")
+	driveCreateCmd.Flags().String("content-file", "", "Path to a UTF-8 text file with content")
+	driveCreateCmd.Flags().String("content-mime-type", "", "MIME type of supplied content when it differs from --mime-type (e.g., text/markdown)")
+	driveCreateCmd.Flags().String("folder", "", "Target folder ID (provider-prefixed). Omit for root.")
+	driveCreateCmd.Flags().String("description", "", "File description")
+
 	// mkdir flags
 	driveMkdirCmd.Flags().String("name", "", "Folder name")
 	driveMkdirCmd.Flags().String("parent", "", "Parent folder ID (provider-prefixed). Omit for root.")
@@ -490,6 +620,8 @@ func init() {
 	// Register sub-commands
 	driveCmd.AddCommand(driveFilesCmd)
 	driveCmd.AddCommand(driveFileCmd)
+	driveCmd.AddCommand(driveContentCmd)
+	driveCmd.AddCommand(driveCreateCmd)
 	driveCmd.AddCommand(driveDownloadCmd)
 	driveCmd.AddCommand(drivePermissionsCmd)
 	driveCmd.AddCommand(driveUploadCmd)

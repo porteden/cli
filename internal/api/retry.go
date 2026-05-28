@@ -94,7 +94,15 @@ func (c *Client) doWithRetry(ctx context.Context, method, path string, body []by
 			return resp, nil
 		}
 
-		// Retryable error - close body and prepare for retry
+		// Last attempt — return the response even though it's retryable so the
+		// caller can parse the body for accessInfo / errorMessage. Otherwise
+		// we'd swallow the backend's diagnostic on retry exhaustion and surface
+		// only "HTTP 502", which is the opposite of what the user needs.
+		if attempt == maxRetries {
+			return resp, nil
+		}
+
+		// Mid-loop retry: discard body and prepare for next attempt
 		resp.Body.Close()
 		lastErr = fmt.Errorf("HTTP %d", resp.StatusCode)
 
@@ -106,5 +114,7 @@ func (c *Client) doWithRetry(ctx context.Context, method, path string, body []by
 		}
 	}
 
+	// All attempts hit a network error (no response). The retryable-status
+	// case is handled inside the loop above.
 	return nil, fmt.Errorf("request failed after %d retries: %w", maxRetries, lastErr)
 }

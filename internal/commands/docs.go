@@ -30,18 +30,34 @@ Examples:
 
 var docsCreateCmd = &cobra.Command{
 	Use:   "create",
-	Short: "Create a new Google Doc",
-	Long: `Creates a new blank Google Doc via the Drive upload endpoint.
+	Short: "Create a new Google Doc, optionally seeded with content",
+	Long: `Creates a new Google Doc. Pass --content (inline) or --content-file
+to seed the body in a single round-trip. Plain text is the default; supply
+--content-mime-type text/markdown when seeding with markdown.
 
 Examples:
   porteden docs create --name "Meeting Notes"
-  porteden docs create --name "Project Brief" --folder google:0B7_FOLDER`,
+  porteden docs create --name "Sprint Plan" --content-file ./plan.md --content-mime-type text/markdown
+  porteden docs create --name "Brief" --folder google:0B7_FOLDER --content "Draft"`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name, _ := cmd.Flags().GetString("name")
 		folder, _ := cmd.Flags().GetString("folder")
+		content, _ := cmd.Flags().GetString("content")
+		contentFile, _ := cmd.Flags().GetString("content-file")
+		contentMime, _ := cmd.Flags().GetString("content-mime-type")
 
 		if name == "" {
 			return errors.New("--name is required")
+		}
+		if content != "" && contentFile != "" {
+			return errors.New("--content and --content-file are mutually exclusive")
+		}
+		if contentFile != "" {
+			data, err := os.ReadFile(contentFile)
+			if err != nil {
+				return fmt.Errorf("cannot read content file: %w", err)
+			}
+			content = string(data)
 		}
 
 		client, err := getClient(cmd)
@@ -49,7 +65,7 @@ Examples:
 			return err
 		}
 
-		result, err := client.UploadDriveFile(name, "application/vnd.google-apps.document", folder, "", []byte{})
+		result, err := createDriveFileOrBlank(client, name, "application/vnd.google-apps.document", content, contentMime, folder, "")
 		if err != nil {
 			return formatError(err)
 		}
@@ -273,6 +289,9 @@ func init() {
 	// create flags
 	docsCreateCmd.Flags().String("name", "", "Document name")
 	docsCreateCmd.Flags().String("folder", "", "Target folder ID (provider-prefixed). Omit for root.")
+	docsCreateCmd.Flags().String("content", "", "Inline UTF-8 content to seed the doc")
+	docsCreateCmd.Flags().String("content-file", "", "Path to a UTF-8 text file to seed the doc")
+	docsCreateCmd.Flags().String("content-mime-type", "", "MIME of supplied content (e.g., text/markdown). Defaults to text/plain.")
 
 	// read flags
 	docsReadCmd.Flags().String("format", "text", "Content format: text (default) or structured")

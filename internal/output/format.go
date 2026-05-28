@@ -73,6 +73,18 @@ func applyCompact(data interface{}) interface{} {
 		return CompactThreadResponse(v, compactOpts)
 	case *api.DriveFilesResponse:
 		return CompactDriveFilesResponse(v, compactOpts)
+	case *api.SheetBulkContentResponse:
+		return CompactSheetBulkContentResponse(v, compactOpts)
+	case *api.TaskItemsResponse:
+		return CompactTaskItemsResponse(v, compactOpts)
+	case *api.TaskItemResponse:
+		return CompactTaskItemResponse(v, compactOpts)
+	case *api.TaskSearchResponse:
+		return CompactTaskSearchResponse(v, compactOpts)
+	case *api.TaskBlockListResponse:
+		return CompactTaskBlockListResponse(v, compactOpts)
+	case *api.TaskItemResult:
+		return CompactTaskItemResult(v, compactOpts)
 	default:
 		return data
 	}
@@ -114,6 +126,12 @@ func printPlain(data interface{}) {
 		fmt.Printf("%s\n", v.Message)
 	case *api.EmailsResponse:
 		printEmailsPlain(v.Emails)
+		if v.AccessInfo != "" {
+			fmt.Printf("Access: %s\n", v.AccessInfo)
+		}
+		for _, warn := range v.AuthWarnings {
+			fmt.Printf("Warning: %s\n", warn)
+		}
 	case *api.SingleEmailResponse:
 		printEmailPlain(v.Email)
 		if v.AccessInfo != "" {
@@ -180,6 +198,46 @@ func printPlain(data interface{}) {
 		printDriveAccessWarnings(v.AccessInfo, nil)
 	case *api.SheetValuesResponse:
 		printSheetValuesPlain(v)
+	case *api.SheetBulkContentResponse:
+		printSheetBulkContentPlain(v)
+	case *api.DriveFileContentResponse:
+		printDriveFileContentPlain(v)
+	// Slides
+	case *api.SlidesMetadataResponse:
+		printSlidesMetadataPlain(v)
+	case *api.SlidesContentResponse:
+		printSlidesContentPlain(v)
+	// Tasks
+	case *api.TaskProvidersResponse:
+		printTaskProvidersPlain(*v)
+	case *api.TaskBoardsResponse:
+		printTaskBoardsPlain(v)
+	case *api.TaskBoardResponse:
+		printTaskBoardDetailPlain(v)
+	case *api.TaskItemsResponse:
+		printTaskItemsPlain(v)
+	case *api.TaskItemResponse:
+		if v.Item != nil {
+			printTaskItemDetailPlain(*v.Item)
+		}
+		if footer := taskProviderFooter(v.Provider); footer != "" {
+			fmt.Print("\n", footer)
+		}
+		printDriveAccessWarnings(v.AccessInfo, nil)
+	case *api.TaskCommentsResponse:
+		printTaskCommentsPlain(v)
+	case *api.TaskSearchResponse:
+		printTaskSearchPlain(v)
+	case *api.TaskBlockListResponse:
+		printTaskBlockListPlain(v)
+	case *api.TaskItemResult:
+		printTaskItemResult(v)
+	case *api.TaskOperationResult:
+		printTaskOperationResult(v)
+	case *api.TaskCommentResult:
+		printTaskCommentResult(v)
+	case *api.AppendBlocksResponse:
+		printAppendBlocksResponse(v)
 	}
 }
 
@@ -216,9 +274,12 @@ func printTable(data interface{}) {
 	case *api.DeleteEventResponse:
 		fmt.Fprintf(w, "%s\n", v.Message)
 	case *api.EmailsResponse:
-		printEmailsTable(w, v.Emails, v.TotalCount, v.HasMore)
+		printEmailsTable(w, v.Emails, v.HasMore)
 		if v.AccessInfo != "" {
 			fmt.Fprintf(w, "\nAccess: %s\n", v.AccessInfo)
+		}
+		for _, warn := range v.AuthWarnings {
+			fmt.Fprintf(w, ColorYellow("Warning: %s\n"), warn)
 		}
 	case *api.SingleEmailResponse:
 		printEmailDetail(w, v.Email)
@@ -261,6 +322,50 @@ func printTable(data interface{}) {
 		printSheetMetadataTable(w, v)
 	case *api.SheetValuesResponse:
 		printSheetValuesTable(w, v)
+	case *api.SheetBulkContentResponse:
+		printSheetBulkContentTable(w, v)
+	case *api.DriveFileContentResponse:
+		printDriveFileContentTable(w, v)
+	// Slides
+	case *api.SlidesMetadataResponse:
+		printSlidesMetadataTable(w, v)
+	case *api.SlidesContentResponse:
+		printSlidesContentTable(w, v)
+	// Tasks
+	case *api.TaskProvidersResponse:
+		printTaskProvidersTable(w, *v)
+	case *api.TaskBoardsResponse:
+		printTaskBoardsTable(w, v)
+	case *api.TaskBoardResponse:
+		printTaskBoardDetailTable(w, v)
+	case *api.TaskItemsResponse:
+		printTaskItemsTable(w, v)
+	case *api.TaskItemResponse:
+		if v.Item != nil {
+			printTaskItemDetailTable(w, *v.Item)
+		}
+		if footer := taskProviderFooter(v.Provider); footer != "" {
+			fmt.Fprint(w, "\n", footer)
+		}
+		printDriveAccessWarningsTable(w, v.AccessInfo, nil)
+	case *api.TaskCommentsResponse:
+		printTaskCommentsTable(w, v)
+	case *api.TaskSearchResponse:
+		printTaskSearchTable(w, v)
+	case *api.TaskBlockListResponse:
+		printTaskBlockListTable(w, v)
+	case *api.TaskItemResult:
+		w.Flush()
+		printTaskItemResult(v)
+	case *api.TaskOperationResult:
+		w.Flush()
+		printTaskOperationResult(v)
+	case *api.TaskCommentResult:
+		w.Flush()
+		printTaskCommentResult(v)
+	case *api.AppendBlocksResponse:
+		w.Flush()
+		printAppendBlocksResponse(v)
 	}
 }
 
@@ -424,7 +529,7 @@ func truncate(s string, max int) string {
 
 // ==================== EMAIL FORMATTERS ====================
 
-func printEmailsTable(w *tabwriter.Writer, emails []api.Email, totalCount int, hasMore bool) {
+func printEmailsTable(w *tabwriter.Writer, emails []api.Email, hasMore bool) {
 	fmt.Fprintln(w, "ID\tDATE\tFROM\tSUBJECT\tREAD\tATTACH")
 	fmt.Fprintln(w, "──\t────\t────\t───────\t────\t──────")
 
@@ -450,7 +555,7 @@ func printEmailsTable(w *tabwriter.Writer, emails []api.Email, totalCount int, h
 
 		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
 			truncate(e.ID, 24),
-			safeDate(FormatLocalTime(e.ReceivedAt)),
+			safeDate(FormatLocalTimePtr(e.ReceivedAt)),
 			truncate(from, 24),
 			truncate(e.Subject, 40),
 			readStatus,
@@ -458,12 +563,12 @@ func printEmailsTable(w *tabwriter.Writer, emails []api.Email, totalCount int, h
 		)
 	}
 
-	if totalCount > 0 || len(emails) > 0 {
-		shown := len(emails)
+	// The API does not expose a post-firewall total — drive iteration by hasMore.
+	if len(emails) > 0 {
 		if hasMore {
-			fmt.Fprintf(w, "\nShowing %d emails (more available, use --all to fetch all)\n", shown)
-		} else if totalCount > 0 {
-			fmt.Fprintf(w, "\nShowing %d of %d emails\n", shown, totalCount)
+			fmt.Fprintf(w, "\nShowing %d emails (more available, use --all to fetch all)\n", len(emails))
+		} else {
+			fmt.Fprintf(w, "\nShowing %d emails\n", len(emails))
 		}
 	}
 }
@@ -487,14 +592,15 @@ func printEmailDetail(w *tabwriter.Writer, e api.Email) {
 		fmt.Fprintf(w, "CC:\t%s\n", formatParticipants(e.CC))
 	}
 
-	if !e.SentAt.IsZero() {
-		fmt.Fprintf(w, "Sent:\t%s\n", FormatLocalTime(e.SentAt))
+	if e.SentAt != nil {
+		fmt.Fprintf(w, "Sent:\t%s\n", FormatLocalTime(*e.SentAt))
 	}
-	if !e.ReceivedAt.IsZero() {
-		fmt.Fprintf(w, "Received:\t%s\n", FormatLocalTime(e.ReceivedAt))
+	if e.ReceivedAt != nil {
+		fmt.Fprintf(w, "Received:\t%s\n", FormatLocalTime(*e.ReceivedAt))
 	}
 
 	fmt.Fprintf(w, "Read:\t%v\n", e.IsRead)
+	fmt.Fprintf(w, "Direction:\t%s\n", emailDirection(e.IsOutbound))
 
 	if len(e.Labels) > 0 {
 		fmt.Fprintf(w, "Labels:\t%s\n", strings.Join(e.Labels, ", "))
@@ -505,6 +611,9 @@ func printEmailDetail(w *tabwriter.Writer, e api.Email) {
 	}
 
 	fmt.Fprintf(w, "Provider:\t%s\n", e.Provider)
+	if e.EmailAccountOwner != "" {
+		fmt.Fprintf(w, "Account:\t%s\n", e.EmailAccountOwner)
+	}
 
 	if e.HasAttachments && len(e.Attachments) > 0 {
 		fmt.Fprintln(w, "Attachments:")
@@ -529,8 +638,8 @@ func printThreadTable(w *tabwriter.Writer, t *api.ThreadResponse) {
 	fmt.Fprintf(w, "Thread ID:\t%s\n", t.ID)
 	fmt.Fprintf(w, "Subject:\t%s\n", t.Subject)
 	fmt.Fprintf(w, "Messages:\t%d\n", t.MessageCount)
-	if !t.LastMessageAt.IsZero() {
-		fmt.Fprintf(w, "Last Message:\t%s\n", FormatLocalTime(t.LastMessageAt))
+	if t.LastMessageAt != nil {
+		fmt.Fprintf(w, "Last Message:\t%s\n", FormatLocalTime(*t.LastMessageAt))
 	}
 	fmt.Fprintf(w, "Provider:\t%s\n", t.Provider)
 
@@ -543,8 +652,8 @@ func printThreadTable(w *tabwriter.Writer, t *api.ThreadResponse) {
 	}
 
 	fmt.Fprintln(w)
-	fmt.Fprintln(w, "ID\tFROM\tSENT\tREAD")
-	fmt.Fprintln(w, "──\t────\t────\t────")
+	fmt.Fprintln(w, "ID\tDIR\tFROM\tSENT\tREAD")
+	fmt.Fprintln(w, "──\t───\t────\t────\t────")
 
 	for _, msg := range t.Messages {
 		from := ""
@@ -561,10 +670,16 @@ func printThreadTable(w *tabwriter.Writer, t *api.ThreadResponse) {
 			readStatus = ColorYellow("no")
 		}
 
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n",
+		dir := "in"
+		if msg.IsOutbound {
+			dir = "out"
+		}
+
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
 			truncate(msg.ID, 24),
+			dir,
 			truncate(from, 24),
-			FormatLocalTime(msg.SentAt),
+			FormatLocalTimePtr(msg.SentAt),
 			readStatus,
 		)
 	}
@@ -578,7 +693,7 @@ func printEmailsPlain(emails []api.Email) {
 		}
 		fmt.Printf("%s\t%s\t%s\t%s\t%v\t%v\n",
 			e.ID,
-			safeDate(FormatLocalTime(e.ReceivedAt)),
+			safeDate(FormatLocalTimePtr(e.ReceivedAt)),
 			from,
 			e.Subject,
 			e.IsRead,
@@ -593,10 +708,14 @@ func printEmailPlain(e api.Email) {
 	if e.From != nil {
 		fmt.Printf("From: %s\n", e.From.Email)
 	}
-	if !e.ReceivedAt.IsZero() {
-		fmt.Printf("Received: %s\n", FormatLocalTime(e.ReceivedAt))
+	if e.ReceivedAt != nil {
+		fmt.Printf("Received: %s\n", FormatLocalTime(*e.ReceivedAt))
 	}
 	fmt.Printf("Read: %v\n", e.IsRead)
+	fmt.Printf("Direction: %s\n", emailDirection(e.IsOutbound))
+	if e.EmailAccountOwner != "" {
+		fmt.Printf("Account: %s\n", e.EmailAccountOwner)
+	}
 	if e.Body != "" {
 		fmt.Printf("\n%s\n", e.Body)
 	} else if e.BodyPreview != "" {
@@ -613,8 +732,15 @@ func printThreadPlain(t *api.ThreadResponse) {
 		if msg.From != nil {
 			from = msg.From.Email
 		}
-		fmt.Printf("%s\t%s\t%s\t%v\n", msg.ID, from, FormatLocalTime(msg.SentAt), msg.IsRead)
+		fmt.Printf("%s\t%s\t%s\t%v\n", msg.ID, from, FormatLocalTimePtr(msg.SentAt), msg.IsRead)
 	}
+}
+
+func emailDirection(isOutbound bool) string {
+	if isOutbound {
+		return "outbound"
+	}
+	return "inbound"
 }
 
 func formatParticipant(p api.Participant) string {
@@ -946,4 +1072,569 @@ func formatBytes(b int64) string {
 	default:
 		return fmt.Sprintf("%d B", b)
 	}
+}
+
+// ==================== DRIVE FILE CONTENT FORMATTERS ====================
+
+// driveContentReadableHint converts a server reason code into a one-line steer
+// for the human reader. Empty when the file was read successfully.
+func driveContentReadableHint(v *api.DriveFileContentResponse) string {
+	if v.Readable {
+		if v.Truncated {
+			return "Content truncated at the 10 MB cap — use webContentLink for the full file."
+		}
+		return ""
+	}
+	reason := derefStr(v.Reason)
+	switch reason {
+	case "USE_SHEETS_ENDPOINT":
+		return "This file is a spreadsheet. Use: porteden sheets content <fileId>"
+	case "USE_SLIDES_ENDPOINT":
+		return "This file is a presentation. Use: porteden slides read <fileId>"
+	case "BINARY_CONTENT":
+		return "Binary file — open via webViewLink."
+	case "TOO_LARGE":
+		return "File exceeds the 10 MB cap — fetch via webContentLink."
+	case "EXPORT_FAILED":
+		return "Workspace export failed — try `porteden drive download <fileId>` for exportLinks."
+	}
+	if reason != "" {
+		return "Not readable: " + reason
+	}
+	return "Not readable."
+}
+
+func printDriveFileContentTable(w *tabwriter.Writer, v *api.DriveFileContentResponse) {
+	w.Flush()
+	if v.Readable && v.Content != nil {
+		fmt.Print(*v.Content)
+		if !strings.HasSuffix(*v.Content, "\n") {
+			fmt.Println()
+		}
+	}
+	if hint := driveContentReadableHint(v); hint != "" {
+		fmt.Fprintln(os.Stderr, hint)
+	}
+	if v.WebViewLink != nil && *v.WebViewLink != "" {
+		fmt.Fprintf(os.Stderr, "View:     %s\n", *v.WebViewLink)
+	}
+	if v.WebContentLink != nil && *v.WebContentLink != "" {
+		fmt.Fprintf(os.Stderr, "Download: %s\n", *v.WebContentLink)
+	}
+	printDriveAccessWarnings(v.AccessInfo, nil)
+}
+
+func printDriveFileContentPlain(v *api.DriveFileContentResponse) {
+	if v.Readable && v.Content != nil {
+		fmt.Print(*v.Content)
+		if !strings.HasSuffix(*v.Content, "\n") {
+			fmt.Println()
+		}
+	}
+	if hint := driveContentReadableHint(v); hint != "" {
+		fmt.Fprintln(os.Stderr, hint)
+	}
+	printDriveAccessWarnings(v.AccessInfo, nil)
+}
+
+// ==================== SHEETS BULK CONTENT FORMATTERS ====================
+
+func printSheetBulkContentTable(w *tabwriter.Writer, v *api.SheetBulkContentResponse) {
+	title := derefStr(v.Title)
+	if title == "" {
+		title = v.SpreadsheetID
+	}
+	fmt.Fprintf(w, "Spreadsheet:\t%s\n", title)
+	fmt.Fprintf(w, "ID:\t%s\n", v.SpreadsheetID)
+	for _, tab := range v.Sheets {
+		fmt.Fprintln(w)
+		marker := ""
+		if tab.Clipped {
+			marker = ColorYellow(" (clipped)")
+		}
+		fmt.Fprintf(w, "── %s%s ── (%s)\n", tab.Title, marker, tab.Range)
+		printValuesGrid(w, tab.Values)
+		if tab.Clipped && tab.FullRange != nil {
+			fmt.Fprintf(w, "Full range: %s — fetch with `porteden sheets read --range '%s'`\n", *tab.FullRange, *tab.FullRange)
+		}
+	}
+	printDriveAccessWarningsTable(w, v.AccessInfo, nil)
+}
+
+func printSheetBulkContentPlain(v *api.SheetBulkContentResponse) {
+	for _, tab := range v.Sheets {
+		fmt.Printf("# %s\t%s", tab.Title, tab.Range)
+		if tab.Clipped {
+			fmt.Print("\tclipped")
+		}
+		fmt.Println()
+		for _, row := range tab.Values {
+			cells := make([]string, len(row))
+			for i, c := range row {
+				cells[i] = fmt.Sprintf("%v", c)
+			}
+			fmt.Println(strings.Join(cells, "\t"))
+		}
+		if tab.Clipped && tab.FullRange != nil {
+			fmt.Printf("# fullRange\t%s\n", *tab.FullRange)
+		}
+	}
+	printDriveAccessWarnings(v.AccessInfo, nil)
+}
+
+// printValuesGrid prints a 2D values grid with a header underline.
+// Shared by /sheets/content per-tab rendering.
+func printValuesGrid(w *tabwriter.Writer, values [][]interface{}) {
+	if len(values) == 0 {
+		fmt.Fprintln(w, "(empty)")
+		return
+	}
+	maxCols := 0
+	for _, row := range values {
+		if len(row) > maxCols {
+			maxCols = len(row)
+		}
+	}
+	for i, cell := range values[0] {
+		if i > 0 {
+			fmt.Fprint(w, "\t")
+		}
+		fmt.Fprintf(w, "%v", cell)
+	}
+	fmt.Fprintln(w)
+	for i := 0; i < maxCols; i++ {
+		if i > 0 {
+			fmt.Fprint(w, "\t")
+		}
+		fmt.Fprint(w, "────")
+	}
+	fmt.Fprintln(w)
+	for _, row := range values[1:] {
+		for i := 0; i < maxCols; i++ {
+			if i > 0 {
+				fmt.Fprint(w, "\t")
+			}
+			if i < len(row) {
+				fmt.Fprintf(w, "%v", row[i])
+			}
+		}
+		fmt.Fprintln(w)
+	}
+}
+
+// ==================== SLIDES FORMATTERS ====================
+
+func printSlidesMetadataTable(w *tabwriter.Writer, v *api.SlidesMetadataResponse) {
+	title := derefStr(v.Title)
+	if title == "" {
+		title = v.PresentationID
+	}
+	fmt.Fprintf(w, "Presentation:\t%s\n", title)
+	fmt.Fprintf(w, "ID:\t%s\n", v.PresentationID)
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, "INDEX\tTITLE")
+	fmt.Fprintln(w, "─────\t─────")
+	for _, s := range v.Slides {
+		fmt.Fprintf(w, "%d\t%s\n", s.Index, derefStr(s.Title))
+	}
+	printDriveAccessWarningsTable(w, v.AccessInfo, nil)
+}
+
+func printSlidesMetadataPlain(v *api.SlidesMetadataResponse) {
+	for _, s := range v.Slides {
+		fmt.Printf("%d\t%s\n", s.Index, derefStr(s.Title))
+	}
+	printDriveAccessWarnings(v.AccessInfo, nil)
+}
+
+func printSlidesContentTable(w *tabwriter.Writer, v *api.SlidesContentResponse) {
+	w.Flush()
+	if v.PlainText != nil {
+		fmt.Print(*v.PlainText)
+		if !strings.HasSuffix(*v.PlainText, "\n") {
+			fmt.Println()
+		}
+	} else if v.StructuredContent != nil {
+		printJSON(v.StructuredContent)
+	}
+	if v.AccessInfo != nil && *v.AccessInfo != "" {
+		fmt.Fprintf(os.Stderr, "\nAccess: %s\n", *v.AccessInfo)
+	}
+}
+
+func printSlidesContentPlain(v *api.SlidesContentResponse) {
+	if v.PlainText != nil {
+		fmt.Print(*v.PlainText)
+		if !strings.HasSuffix(*v.PlainText, "\n") {
+			fmt.Println()
+		}
+	} else if v.StructuredContent != nil {
+		printJSON(v.StructuredContent)
+	}
+	printDriveAccessWarnings(v.AccessInfo, nil)
+}
+
+// ==================== TASKS FORMATTERS ====================
+
+func taskProviderFooter(provider *string) string {
+	if provider == nil || *provider == "" {
+		return ""
+	}
+	return fmt.Sprintf("Provider: %s\n", *provider)
+}
+
+func printTaskProvidersTable(w *tabwriter.Writer, v api.TaskProvidersResponse) {
+	fmt.Fprintln(w, "ID\tCODE\tNAME")
+	fmt.Fprintln(w, "──\t────\t────")
+	for _, p := range v {
+		fmt.Fprintf(w, "%d\t%s\t%s\n", p.TaskProviderID, p.ProviderCode, p.ProviderDisplayName)
+	}
+}
+
+func printTaskProvidersPlain(v api.TaskProvidersResponse) {
+	for _, p := range v {
+		fmt.Printf("%d\t%s\t%s\n", p.TaskProviderID, p.ProviderCode, p.ProviderDisplayName)
+	}
+}
+
+func printTaskBoardsTable(w *tabwriter.Writer, v *api.TaskBoardsResponse) {
+	fmt.Fprintln(w, "ID\tNAME\tGROUPS\tCOLS\tWORKSPACE")
+	fmt.Fprintln(w, "──\t────\t──────\t────\t─────────")
+	for _, b := range v.Boards {
+		fmt.Fprintf(w, "%s\t%s\t%d\t%d\t%s\n",
+			truncate(b.ID, 24),
+			truncate(derefStr(b.Name), 35),
+			len(b.Groups),
+			len(b.Columns),
+			truncate(derefStr(b.WorkspaceName), 20),
+		)
+	}
+	if hasMoreBoards(v) {
+		fmt.Fprintln(w, "\nMore results available — use --all to fetch all or pass --cursor/--page.")
+	}
+	if footer := taskProviderFooter(v.Provider); footer != "" {
+		fmt.Fprint(w, "\n", footer)
+	}
+	printDriveAccessWarningsTable(w, v.AccessInfo, nil)
+}
+
+func printTaskBoardsPlain(v *api.TaskBoardsResponse) {
+	for _, b := range v.Boards {
+		fmt.Printf("%s\t%s\t%d\t%d\t%s\n",
+			b.ID, derefStr(b.Name), len(b.Groups), len(b.Columns), derefStr(b.WorkspaceName))
+	}
+	printDriveAccessWarnings(v.AccessInfo, nil)
+}
+
+func hasMoreBoards(v *api.TaskBoardsResponse) bool {
+	return (v.NextCursor != nil && *v.NextCursor != "") || (v.NextPage != nil && *v.NextPage > 0)
+}
+
+func printTaskBoardDetailTable(w *tabwriter.Writer, v *api.TaskBoardResponse) {
+	if v.Board == nil {
+		fmt.Fprintln(w, "(no board)")
+		return
+	}
+	b := *v.Board
+	fmt.Fprintf(w, "ID:\t%s\n", b.ID)
+	fmt.Fprintf(w, "Name:\t%s\n", derefStr(b.Name))
+	if b.Description != nil && *b.Description != "" {
+		fmt.Fprintf(w, "Description:\t%s\n", truncate(*b.Description, 120))
+	}
+	if b.WorkspaceName != nil {
+		fmt.Fprintf(w, "Workspace:\t%s\n", *b.WorkspaceName)
+	}
+	if b.FolderName != nil {
+		fmt.Fprintf(w, "Folder:\t%s\n", *b.FolderName)
+	}
+	if len(b.Groups) > 0 {
+		fmt.Fprintln(w, "\nGROUP ID\tTITLE\tCOLOR")
+		fmt.Fprintln(w, "────────\t─────\t─────")
+		for _, g := range b.Groups {
+			fmt.Fprintf(w, "%s\t%s\t%s\n", truncate(g.ID, 30), g.Title, derefStr(g.Color))
+		}
+	}
+	if len(b.Columns) > 0 {
+		fmt.Fprintln(w, "\nCOL ID\tTITLE\tTYPE")
+		fmt.Fprintln(w, "──────\t─────\t────")
+		for _, c := range b.Columns {
+			fmt.Fprintf(w, "%s\t%s\t%s\n", truncate(c.ID, 30), c.Title, c.Type)
+		}
+	}
+	if footer := taskProviderFooter(v.Provider); footer != "" {
+		fmt.Fprint(w, "\n", footer)
+	}
+	printDriveAccessWarningsTable(w, v.AccessInfo, nil)
+}
+
+func printTaskBoardDetailPlain(v *api.TaskBoardResponse) {
+	if v.Board == nil {
+		return
+	}
+	b := *v.Board
+	fmt.Printf("ID: %s\n", b.ID)
+	fmt.Printf("Name: %s\n", derefStr(b.Name))
+	if b.WorkspaceName != nil {
+		fmt.Printf("Workspace: %s\n", *b.WorkspaceName)
+	}
+	for _, g := range b.Groups {
+		fmt.Printf("group\t%s\t%s\n", g.ID, g.Title)
+	}
+	for _, c := range b.Columns {
+		fmt.Printf("col\t%s\t%s\t%s\n", c.ID, c.Title, c.Type)
+	}
+	printDriveAccessWarnings(v.AccessInfo, nil)
+}
+
+func taskItemDue(item api.TaskItemDto) string {
+	if item.DueDate == nil {
+		return ""
+	}
+	// dueDate is ISO 8601; show the date portion when present.
+	s := *item.DueDate
+	if len(s) >= 10 {
+		return s[:10]
+	}
+	return s
+}
+
+func printTaskItemsTable(w *tabwriter.Writer, v *api.TaskItemsResponse) {
+	fmt.Fprintln(w, "ID\tSTATUS\tNAME\tASSIGNEES\tDUE\tPRIORITY")
+	fmt.Fprintln(w, "──\t──────\t────\t─────────\t───\t────────")
+	for _, item := range v.Items {
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
+			truncate(item.ID, 24),
+			derefStr(item.Status),
+			truncate(derefStr(item.Name), 40),
+			truncate(strings.Join(item.Assignees, ", "), 24),
+			taskItemDue(item),
+			derefStr(item.Priority),
+		)
+	}
+	if len(v.Items) > 0 && hasMoreItems(v) {
+		fmt.Fprintln(w, "\nMore results available — use --all to fetch all or pass --cursor/--page.")
+	}
+	if v.TotalCount != nil {
+		fmt.Fprintf(w, "\nTotal: %d (pre-rule-filter)\n", *v.TotalCount)
+	}
+	if footer := taskProviderFooter(v.Provider); footer != "" {
+		fmt.Fprint(w, "\n", footer)
+	}
+	printDriveAccessWarningsTable(w, v.AccessInfo, nil)
+}
+
+func printTaskItemsPlain(v *api.TaskItemsResponse) {
+	for _, item := range v.Items {
+		fmt.Printf("%s\t%s\t%s\t%s\t%s\t%s\n",
+			item.ID,
+			derefStr(item.Status),
+			derefStr(item.Name),
+			strings.Join(item.Assignees, ","),
+			taskItemDue(item),
+			derefStr(item.Priority),
+		)
+	}
+	printDriveAccessWarnings(v.AccessInfo, nil)
+}
+
+func hasMoreItems(v *api.TaskItemsResponse) bool {
+	return (v.NextCursor != nil && *v.NextCursor != "") || (v.NextPage != nil && *v.NextPage > 0)
+}
+
+func printTaskItemDetailTable(w *tabwriter.Writer, item api.TaskItemDto) {
+	fmt.Fprintf(w, "ID:\t%s\n", item.ID)
+	fmt.Fprintf(w, "Name:\t%s\n", derefStr(item.Name))
+	if item.GroupName != nil {
+		fmt.Fprintf(w, "Group:\t%s\n", *item.GroupName)
+	} else if item.GroupID != nil {
+		fmt.Fprintf(w, "Group:\t%s\n", *item.GroupID)
+	}
+	if item.Status != nil {
+		fmt.Fprintf(w, "Status:\t%s\n", *item.Status)
+	}
+	if item.Priority != nil {
+		fmt.Fprintf(w, "Priority:\t%s\n", *item.Priority)
+	}
+	if item.DueDate != nil {
+		fmt.Fprintf(w, "Due:\t%s\n", *item.DueDate)
+	}
+	if len(item.Assignees) > 0 {
+		fmt.Fprintf(w, "Assignees:\t%s\n", strings.Join(item.Assignees, ", "))
+	}
+	if len(item.Labels) > 0 {
+		fmt.Fprintf(w, "Labels:\t%s\n", strings.Join(item.Labels, ", "))
+	}
+	if item.Description != nil && *item.Description != "" {
+		fmt.Fprintf(w, "Description:\t%s\n", *item.Description)
+	}
+	if len(item.ColumnValues) > 0 {
+		fmt.Fprintln(w, "\nCOLUMN\tTYPE\tVALUE")
+		fmt.Fprintln(w, "──────\t────\t─────")
+		for _, cv := range item.ColumnValues {
+			fmt.Fprintf(w, "%s\t%s\t%s\n", cv.ColumnTitle, cv.Type, truncate(derefStr(cv.Text), 60))
+		}
+	}
+	if len(item.SubItems) > 0 {
+		fmt.Fprintf(w, "\nSubItems:\t%d\n", len(item.SubItems))
+	}
+}
+
+func printTaskItemDetailPlain(item api.TaskItemDto) {
+	fmt.Printf("ID: %s\n", item.ID)
+	fmt.Printf("Name: %s\n", derefStr(item.Name))
+	if item.Status != nil {
+		fmt.Printf("Status: %s\n", *item.Status)
+	}
+	if len(item.Assignees) > 0 {
+		fmt.Printf("Assignees: %s\n", strings.Join(item.Assignees, ", "))
+	}
+	if item.DueDate != nil {
+		fmt.Printf("Due: %s\n", *item.DueDate)
+	}
+	if item.Description != nil && *item.Description != "" {
+		fmt.Printf("\n%s\n", *item.Description)
+	}
+}
+
+func printTaskCommentsTable(w *tabwriter.Writer, v *api.TaskCommentsResponse) {
+	fmt.Fprintln(w, "ID\tAUTHOR\tCREATED\tBODY")
+	fmt.Fprintln(w, "──\t──────\t───────\t────")
+	for _, c := range v.Comments {
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n",
+			truncate(c.ID, 20),
+			truncate(derefStr(c.AuthorName), 24),
+			derefStr(c.CreatedAt),
+			truncate(derefStr(c.Body), 60),
+		)
+	}
+	if footer := taskProviderFooter(v.Provider); footer != "" {
+		fmt.Fprint(w, "\n", footer)
+	}
+	printDriveAccessWarningsTable(w, v.AccessInfo, nil)
+}
+
+func printTaskCommentsPlain(v *api.TaskCommentsResponse) {
+	for _, c := range v.Comments {
+		fmt.Printf("%s\t%s\t%s\t%s\n",
+			c.ID, derefStr(c.AuthorName), derefStr(c.CreatedAt), derefStr(c.Body))
+	}
+	printDriveAccessWarnings(v.AccessInfo, nil)
+}
+
+func printTaskSearchTable(w *tabwriter.Writer, v *api.TaskSearchResponse) {
+	fmt.Fprintf(w, "Query:\t%s\n", v.Query)
+	fmt.Fprintf(w, "Boards searched:\t%d", v.BoardsSearched)
+	if v.BoardsFailed > 0 {
+		fmt.Fprintf(w, "  (failed: %d)", v.BoardsFailed)
+	}
+	fmt.Fprintln(w)
+	fmt.Fprintf(w, "Results:\t%d\n\n", v.TotalResults)
+
+	fmt.Fprintln(w, "BOARD\tITEM_ID\tSTATUS\tNAME")
+	fmt.Fprintln(w, "─────\t───────\t──────\t────")
+	for _, r := range v.Results {
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n",
+			truncate(derefStr(r.BoardName), 24),
+			truncate(r.Item.ID, 24),
+			derefStr(r.Item.Status),
+			truncate(derefStr(r.Item.Name), 40),
+		)
+	}
+	if footer := taskProviderFooter(v.Provider); footer != "" {
+		fmt.Fprint(w, "\n", footer)
+	}
+	printDriveAccessWarningsTable(w, v.AccessInfo, nil)
+}
+
+func printTaskSearchPlain(v *api.TaskSearchResponse) {
+	for _, r := range v.Results {
+		fmt.Printf("%s\t%s\t%s\t%s\n",
+			derefStr(r.BoardName), r.Item.ID, derefStr(r.Item.Status), derefStr(r.Item.Name))
+	}
+	if v.BoardsFailed > 0 {
+		fmt.Fprintf(os.Stderr, "Warning: %d boards failed upstream — results are partial.\n", v.BoardsFailed)
+	}
+	printDriveAccessWarnings(v.AccessInfo, nil)
+}
+
+func printTaskBlockListTable(w *tabwriter.Writer, v *api.TaskBlockListResponse) {
+	fmt.Fprintln(w, "TYPE\tCHILDREN\tTEXT")
+	fmt.Fprintln(w, "────\t────────\t────")
+	for _, b := range v.Blocks {
+		children := ""
+		if b.HasChildren {
+			children = "yes"
+		}
+		fmt.Fprintf(w, "%s\t%s\t%s\n", b.Type, children, truncate(derefStr(b.Text), 80))
+	}
+	if v.HasMore {
+		fmt.Fprintln(w, "\nMore blocks available — use --all to fetch all or pass --cursor.")
+	}
+	printDriveAccessWarningsTable(w, v.AccessInfo, nil)
+}
+
+func printTaskBlockListPlain(v *api.TaskBlockListResponse) {
+	for _, b := range v.Blocks {
+		fmt.Printf("%s\t%v\t%s\n", b.Type, b.HasChildren, derefStr(b.Text))
+	}
+	printDriveAccessWarnings(v.AccessInfo, nil)
+}
+
+func printTaskItemResult(v *api.TaskItemResult) {
+	if v.Success {
+		if v.ItemID != nil && *v.ItemID != "" {
+			fmt.Printf("OK  (item: %s)\n", *v.ItemID)
+		} else {
+			fmt.Println("OK")
+		}
+		if len(v.RejectedFields) > 0 {
+			fmt.Fprintf(os.Stderr, ColorYellow("Warning: rejected fields: %s\n"), strings.Join(v.RejectedFields, ", "))
+		}
+		return
+	}
+	msg := derefStr(v.ErrorMessage)
+	if msg == "" {
+		msg = derefStr(v.ErrorCode)
+	}
+	fmt.Fprintf(os.Stderr, "Error: %s\n", msg)
+}
+
+func printTaskOperationResult(v *api.TaskOperationResult) {
+	if v.Success {
+		fmt.Println("OK")
+		return
+	}
+	msg := derefStr(v.ErrorMessage)
+	if msg == "" {
+		msg = derefStr(v.ErrorCode)
+	}
+	fmt.Fprintf(os.Stderr, "Error: %s\n", msg)
+}
+
+func printTaskCommentResult(v *api.TaskCommentResult) {
+	if v.Success {
+		if v.CommentID != nil && *v.CommentID != "" {
+			fmt.Printf("OK  (comment: %s)\n", *v.CommentID)
+		} else {
+			fmt.Println("OK")
+		}
+		return
+	}
+	msg := derefStr(v.ErrorMessage)
+	if msg == "" {
+		msg = derefStr(v.ErrorCode)
+	}
+	fmt.Fprintf(os.Stderr, "Error: %s\n", msg)
+}
+
+func printAppendBlocksResponse(v *api.AppendBlocksResponse) {
+	if v.Success {
+		fmt.Printf("OK  (%d blocks appended)\n", v.BlocksAppended)
+		return
+	}
+	msg := derefStr(v.Error)
+	if msg == "" {
+		msg = derefStr(v.ErrorCode)
+	}
+	fmt.Fprintf(os.Stderr, "Error: %s\n", msg)
 }

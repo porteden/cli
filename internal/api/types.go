@@ -1,18 +1,46 @@
 package api
 
-import "time"
+import (
+	"strings"
+	"time"
+)
+
+// FlexTime is a time.Time that tolerates the backend's occasional
+// zero-stamped naive datetimes (e.g. "0001-01-01T00:00:00" with no offset)
+// on meta fields that don't have a query-bound value.
+type FlexTime struct{ time.Time }
+
+func (t *FlexTime) UnmarshalJSON(b []byte) error {
+	s := strings.Trim(string(b), `"`)
+	if s == "" || s == "null" {
+		return nil
+	}
+	if parsed, err := time.Parse(time.RFC3339Nano, s); err == nil {
+		t.Time = parsed
+		return nil
+	}
+	if parsed, err := time.Parse("2006-01-02T15:04:05", s); err == nil {
+		t.Time = parsed
+		return nil
+	}
+	if parsed, err := time.Parse("2006-01-02", s); err == nil {
+		t.Time = parsed
+		return nil
+	}
+	return nil
+}
 
 // Meta contains response metadata
 type Meta struct {
-	Count       int       `json:"count,omitempty"`
-	Offset      int       `json:"offset,omitempty"`
-	HasMore     bool      `json:"hasMore,omitempty"`
-	TotalCount  int       `json:"totalCount,omitempty"`
-	Truncated   bool      `json:"truncated,omitempty"`
-	ExecutionMs int       `json:"execution_ms,omitempty"`
-	From        time.Time `json:"from,omitempty"`
-	To          time.Time `json:"to,omitempty"`
-	Timestamp   time.Time `json:"timestamp,omitempty"`
+	Count       int      `json:"count,omitempty"`
+	Offset      int      `json:"offset,omitempty"`
+	HasMore     bool     `json:"hasMore,omitempty"`
+	TotalCount  int      `json:"totalCount,omitempty"`
+	Truncated   bool     `json:"truncated,omitempty"`
+	ExecutionMs int      `json:"execution_ms,omitempty"`
+	From        FlexTime `json:"from,omitempty"`
+	To          FlexTime `json:"to,omitempty"`
+	Timestamp   FlexTime `json:"timestamp,omitempty"`
 }
 
 // EventsResponse is the response type for calendar events
@@ -172,13 +200,15 @@ type DeleteEventResponse struct {
 
 // ==================== EMAIL TYPES ====================
 
-// EmailsResponse is the response type for email list/search operations
+// EmailsResponse is the response type for email list/search operations.
+// Pagination: drive iteration via HasMore + NextPageToken — there is no totalCount
+// (the firewall filters server-side and a pre-filter count would mislead).
 type EmailsResponse struct {
-	Emails        []Email `json:"emails"`
-	TotalCount    int     `json:"totalCount,omitempty"`
-	HasMore       bool    `json:"hasMore,omitempty"`
-	NextPageToken string  `json:"nextPageToken,omitempty"`
-	AccessInfo    string  `json:"accessInfo,omitempty"`
+	Emails        []Email  `json:"emails"`
+	HasMore       bool     `json:"hasMoreEmailsInNextResultPage,omitempty"`
+	NextPageToken string   `json:"nextPageToken,omitempty"`
+	AccessInfo    string   `json:"accessInfo,omitempty"`
+	AuthWarnings  []string `json:"authWarnings,omitempty"`
 }
 
 // SingleEmailResponse wraps a single email with access info
@@ -187,26 +217,33 @@ type SingleEmailResponse struct {
 	AccessInfo string `json:"accessInfo,omitempty"`
 }
 
-// Email represents an email message
+// Email represents an email message (EmailAccessDto on the wire).
+// IsRead, IsOutbound, HasAttachments, Provider are structural — always present.
+// EmailAccountOwner identifies which connected mailbox a result came from.
 type Email struct {
-	ID             string        `json:"id"`
-	ThreadID       string        `json:"threadId,omitempty"`
-	Subject        string        `json:"subject,omitempty"`
-	From           *Participant  `json:"from,omitempty"`
-	To             []Participant `json:"to,omitempty"`
-	CC             []Participant `json:"cc,omitempty"`
-	BCC            []Participant `json:"bcc,omitempty"`
-	BodyPreview    string        `json:"bodyPreview,omitempty"`
-	Body           string        `json:"body,omitempty"`
-	BodyType       string        `json:"bodyType,omitempty"`
-	SentAt         time.Time     `json:"sentAt,omitempty"`
-	ReceivedAt     time.Time     `json:"receivedAt,omitempty"`
-	IsRead         bool          `json:"isRead"`
-	HasAttachments bool          `json:"hasAttachments"`
-	Attachments    []Attachment  `json:"attachments,omitempty"`
-	Labels         []string      `json:"labels,omitempty"`
-	Importance     string        `json:"importance,omitempty"`
-	Provider       string        `json:"provider"`
+	ID          string        `json:"id"`
+	ThreadID    string        `json:"threadId,omitempty"`
+	Subject     string        `json:"subject,omitempty"`
+	From        *Participant  `json:"from,omitempty"`
+	To          []Participant `json:"to,omitempty"`
+	CC          []Participant `json:"cc,omitempty"`
+	BCC         []Participant `json:"bcc,omitempty"`
+	BodyPreview string        `json:"bodyPreview,omitempty"`
+	Body        string        `json:"body,omitempty"`
+	BodyType    string        `json:"bodyType,omitempty"`
+	// Pointer types so a wire-omitted field (per spec contract) stays
+	// omitted in our re-emission instead of decoding as Go zero-time and
+	// re-emitting "0001-01-01T00:00:00Z" through -jc output.
+	SentAt            *time.Time   `json:"sentAt,omitempty"`
+	ReceivedAt        *time.Time   `json:"receivedAt,omitempty"`
+	IsRead            bool         `json:"isRead"`
+	IsOutbound        bool         `json:"isOutbound"`
+	HasAttachments    bool         `json:"hasAttachments"`
+	Attachments       []Attachment `json:"attachments,omitempty"`
+	Labels            []string     `json:"labels,omitempty"`
+	Importance        string       `json:"importance,omitempty"`
+	Provider          string       `json:"provider"`
+	EmailAccountOwner string       `json:"emailAccountOwner,omitempty"`
 }
 
 // Participant represents an email participant (sender/recipient)
@@ -231,7 +268,7 @@ type ThreadResponse struct {
 	Messages      []Email       `json:"messages"`
 	MessageCount  int           `json:"messageCount"`
 	Participants  []Participant `json:"participants,omitempty"`
-	LastMessageAt time.Time     `json:"lastMessageAt,omitempty"`
+	LastMessageAt *time.Time    `json:"lastMessageAt,omitempty"`
 	Provider      string        `json:"provider"`
 	AccessInfo    string        `json:"accessInfo,omitempty"`
 }
@@ -252,7 +289,9 @@ type EmailParams struct {
 	PageToken     string
 }
 
-// SendEmailRequest represents a request to send a new email
+// SendEmailRequest represents a request to send a new email.
+// For multi-mailbox tokens, pin the sending mailbox via SendFrom (email address)
+// or ConnectionID (integer). Omit both to use the first active connection.
 type SendEmailRequest struct {
 	To           []Participant `json:"to"`
 	CC           []Participant `json:"cc,omitempty"`
@@ -262,6 +301,7 @@ type SendEmailRequest struct {
 	BodyType     string        `json:"bodyType,omitempty"`
 	Importance   string        `json:"importance,omitempty"`
 	ConnectionID *int64        `json:"connectionId,omitempty"`
+	SendFrom     string        `json:"sendFrom,omitempty"`
 }
 
 // ReplyEmailRequest represents a request to reply to an email
@@ -287,11 +327,13 @@ type ModifyEmailRequest struct {
 }
 
 // EmailActionResponse is the response for send/reply/forward operations
+// (SendEmailResult on the wire).
 type EmailActionResponse struct {
 	Success      bool   `json:"success"`
 	EmailID      string `json:"emailId,omitempty"`
 	ThreadID     string `json:"threadId,omitempty"`
 	ErrorMessage string `json:"errorMessage,omitempty"`
+	ErrorCode    string `json:"errorCode,omitempty"`
 }
 
 // ==================== DRIVE TYPES ====================
@@ -313,6 +355,7 @@ type DriveFile struct {
 	ModifiedTime     *string           `json:"modifiedTime,omitempty"`
 	Owners           []DriveUser       `json:"owners,omitempty"`
 	SharedWith       []DriveUser       `json:"sharedWith,omitempty"`
+	SharedBy         *DriveUser        `json:"sharedBy,omitempty"`
 	Description      *string           `json:"description,omitempty"`
 	WebViewLink      *string           `json:"webViewLink,omitempty"`
 	DownloadLink     *string           `json:"downloadLink,omitempty"`
@@ -418,6 +461,36 @@ type ShareFileRequest struct {
 	Message          *string `json:"message,omitempty"`
 }
 
+// DriveFileContentResponse is the response for GET /files/{id}/content.
+// Readability is conveyed via Readable+Reason; HTTP status is always 200.
+// Reason values: BINARY_CONTENT, TOO_LARGE, EXPORT_FAILED, USE_SHEETS_ENDPOINT, USE_SLIDES_ENDPOINT.
+type DriveFileContentResponse struct {
+	FileID          *string `json:"fileId,omitempty"`
+	Name            *string `json:"name,omitempty"`
+	MimeType        *string `json:"mimeType,omitempty"`
+	ContentMimeType *string `json:"contentMimeType,omitempty"`
+	Content         *string `json:"content,omitempty"`
+	ByteLength      *int64  `json:"byteLength,omitempty"`
+	Readable        bool    `json:"readable"`
+	Truncated       bool    `json:"truncated"`
+	Reason          *string `json:"reason,omitempty"`
+	WebViewLink     *string `json:"webViewLink,omitempty"`
+	WebContentLink  *string `json:"webContentLink,omitempty"`
+	AccessInfo      *string `json:"accessInfo,omitempty"`
+}
+
+// CreateDriveFileWithContentRequest represents a request to create a file
+// with inline UTF-8 text content (POST /files). For Workspace target mime
+// types (document/spreadsheet/presentation), Drive auto-imports the content.
+type CreateDriveFileWithContentRequest struct {
+	Name            string  `json:"name"`
+	MimeType        string  `json:"mimeType"`
+	Content         string  `json:"content"`
+	ContentMimeType *string `json:"contentMimeType,omitempty"`
+	FolderID        *string `json:"folderId,omitempty"`
+	Description     *string `json:"description,omitempty"`
+}
+
 // ==================== DOCS TYPES ====================
 
 // DocContentResponse is the response for reading a Google Doc
@@ -480,4 +553,327 @@ type AppendSheetRowsRequest struct {
 	Range            string          `json:"range"`
 	Values           [][]interface{} `json:"values"`
 	ValueInputOption string          `json:"valueInputOption,omitempty"`
+}
+
+// SheetBulkContentTab represents one tab's content in a bulk read.
+// Clipped is true when the tab has more data than was returned; in that
+// case FullRange names the A1 range needed to read the rest via /values.
+type SheetBulkContentTab struct {
+	Title     string          `json:"title"`
+	Range     string          `json:"range"`
+	Values    [][]interface{} `json:"values"`
+	Clipped   bool            `json:"clipped,omitempty"`
+	FullRange *string         `json:"fullRange,omitempty"`
+}
+
+// SheetBulkContentResponse is the response for GET /sheets/{id}/content.
+type SheetBulkContentResponse struct {
+	SpreadsheetID string                `json:"spreadsheetId"`
+	Title         *string               `json:"title,omitempty"`
+	Sheets        []SheetBulkContentTab `json:"sheets"`
+	AccessInfo    *string               `json:"accessInfo,omitempty"`
+}
+
+// ==================== SLIDES TYPES ====================
+
+// SlideInfo represents one slide's index + title in the deck metadata.
+type SlideInfo struct {
+	Index int     `json:"index"`
+	Title *string `json:"title,omitempty"`
+}
+
+// SlidesMetadataResponse is the response for GET /slides/{id}.
+type SlidesMetadataResponse struct {
+	PresentationID string      `json:"presentationId"`
+	Title          *string     `json:"title,omitempty"`
+	Slides         []SlideInfo `json:"slides"`
+	AccessInfo     *string     `json:"accessInfo,omitempty"`
+}
+
+// SlidesContentResponse is the response for GET /slides/{id}/content.
+// PlainText populated when format=text; StructuredContent populated when
+// format=structured. Never both.
+type SlidesContentResponse struct {
+	PlainText         *string     `json:"plainText,omitempty"`
+	StructuredContent interface{} `json:"structuredContent,omitempty"`
+	Title             *string     `json:"title,omitempty"`
+	SlideCount        int         `json:"slideCount"`
+	AccessInfo        *string     `json:"accessInfo,omitempty"`
+}
+
+// ==================== TASKS TYPES ====================
+
+// TaskConnectionInfoDto is one row in GET /tasks/providers.
+type TaskConnectionInfoDto struct {
+	TaskProviderID      int    `json:"taskProviderId"`
+	ProviderCode        string `json:"providerCode"`
+	ProviderDisplayName string `json:"providerDisplayName"`
+}
+
+// TaskProvidersResponse is GET /tasks/providers — a flat (un-wrapped) array.
+type TaskProvidersResponse []TaskConnectionInfoDto
+
+// TaskGroupDto is a group/section/status-option within a board.
+type TaskGroupDto struct {
+	ID    string  `json:"id"`
+	Title string  `json:"title"`
+	Color *string `json:"color,omitempty"`
+}
+
+// TaskColumnDto describes a column/property on a board.
+type TaskColumnDto struct {
+	ID    string `json:"id"`
+	Title string `json:"title"`
+	Type  string `json:"type"`
+}
+
+// TaskTagDto is a board-level tag (Monday).
+type TaskTagDto struct {
+	ID    string  `json:"id"`
+	Name  string  `json:"name"`
+	Color *string `json:"color,omitempty"`
+}
+
+// TaskBoardDto is one board (Monday board / Notion database / Asana project / Jira project / Linear team).
+type TaskBoardDto struct {
+	ID            string          `json:"id"`
+	Name          *string         `json:"name,omitempty"`
+	Description   *string         `json:"description,omitempty"`
+	State         *string         `json:"state,omitempty"`
+	Groups        []TaskGroupDto  `json:"groups,omitempty"`
+	Columns       []TaskColumnDto `json:"columns,omitempty"`
+	WorkspaceID   *string         `json:"workspaceId,omitempty"`
+	WorkspaceName *string         `json:"workspaceName,omitempty"`
+	FolderID      *string         `json:"folderId,omitempty"`
+	FolderName    *string         `json:"folderName,omitempty"`
+	Tags          []TaskTagDto    `json:"tags,omitempty"`
+}
+
+// TaskColumnValueDto is one column's value on an item (provider-specific column metadata).
+type TaskColumnValueDto struct {
+	ColumnID    string  `json:"columnId"`
+	ColumnTitle string  `json:"columnTitle"`
+	Type        string  `json:"type"`
+	Text        *string `json:"text,omitempty"`
+	Value       *string `json:"value,omitempty"`
+}
+
+// TaskCommentDto is one comment on an item.
+type TaskCommentDto struct {
+	ID         string  `json:"id"`
+	Body       *string `json:"body,omitempty"`
+	AuthorName *string `json:"authorName,omitempty"`
+	CreatedAt  *string `json:"createdAt,omitempty"`
+}
+
+// TaskItemDto is one item (task / issue / page) on a board.
+// id, groupId, groupName are structural and always returned even when other
+// fields are masked off by the token's visibleTaskFields.
+type TaskItemDto struct {
+	ID           string               `json:"id"`
+	Name         *string              `json:"name,omitempty"`
+	GroupID      *string              `json:"groupId,omitempty"`
+	GroupName    *string              `json:"groupName,omitempty"`
+	Status       *string              `json:"status,omitempty"`
+	Assignees    []string             `json:"assignees,omitempty"`
+	DueDate      *string              `json:"dueDate,omitempty"`
+	Priority     *string              `json:"priority,omitempty"`
+	Labels       []string             `json:"labels,omitempty"`
+	Description  *string              `json:"description,omitempty"`
+	Comments     []TaskCommentDto     `json:"comments,omitempty"`
+	ColumnValues []TaskColumnValueDto `json:"columnValues,omitempty"`
+	SubItems     []TaskItemDto        `json:"subItems,omitempty"`
+}
+
+// TaskBlockDto is one block of a Notion page body.
+type TaskBlockDto struct {
+	ID          string                 `json:"id"`
+	Type        string                 `json:"type"`
+	Text        *string                `json:"text,omitempty"`
+	RichText    *string                `json:"richText,omitempty"`
+	HasChildren bool                   `json:"hasChildren"`
+	Children    []TaskBlockDto         `json:"children,omitempty"`
+	Metadata    map[string]interface{} `json:"metadata,omitempty"`
+}
+
+// TaskSearchResultDto is one hit in a cross-board search.
+type TaskSearchResultDto struct {
+	BoardID   string      `json:"boardId"`
+	BoardName *string     `json:"boardName,omitempty"`
+	Item      TaskItemDto `json:"item"`
+}
+
+// ── Response wrappers ──
+
+// TaskBoardsResponse wraps a paginated board list.
+type TaskBoardsResponse struct {
+	Provider   *string        `json:"provider,omitempty"`
+	Boards     []TaskBoardDto `json:"boards"`
+	NextCursor *string        `json:"nextCursor,omitempty"`
+	NextPage   *int           `json:"nextPage,omitempty"`
+	AccessInfo *string        `json:"accessInfo,omitempty"`
+}
+
+// TaskBoardResponse wraps a single-board response.
+type TaskBoardResponse struct {
+	Provider   *string       `json:"provider,omitempty"`
+	Board      *TaskBoardDto `json:"board,omitempty"`
+	AccessInfo *string       `json:"accessInfo,omitempty"`
+}
+
+// TaskItemsResponse wraps a paginated item list. TotalCount is the upstream
+// count BEFORE assignee-rule filtering — len(Items) may be smaller per page
+// when access rules are active.
+type TaskItemsResponse struct {
+	Provider   *string       `json:"provider,omitempty"`
+	Items      []TaskItemDto `json:"items"`
+	NextCursor *string       `json:"nextCursor,omitempty"`
+	NextPage   *int          `json:"nextPage,omitempty"`
+	TotalCount *int          `json:"totalCount,omitempty"`
+	AccessInfo *string       `json:"accessInfo,omitempty"`
+}
+
+// TaskItemResponse wraps a single-item response.
+type TaskItemResponse struct {
+	Provider   *string      `json:"provider,omitempty"`
+	Item       *TaskItemDto `json:"item,omitempty"`
+	AccessInfo *string      `json:"accessInfo,omitempty"`
+}
+
+// TaskCommentsResponse wraps an item's comment list.
+type TaskCommentsResponse struct {
+	Provider   *string          `json:"provider,omitempty"`
+	ItemID     string           `json:"itemId"`
+	Comments   []TaskCommentDto `json:"comments"`
+	AccessInfo *string          `json:"accessInfo,omitempty"`
+}
+
+// TaskSearchResponse wraps a cross-board search. BoardsFailed > 0 means
+// partial results — treat as a soft warning, not an error.
+type TaskSearchResponse struct {
+	Provider       *string               `json:"provider,omitempty"`
+	Query          string                `json:"query"`
+	Results        []TaskSearchResultDto `json:"results"`
+	TotalResults   int                   `json:"totalResults"`
+	BoardsSearched int                   `json:"boardsSearched"`
+	BoardsFailed   int                   `json:"boardsFailed"`
+	AccessInfo     *string               `json:"accessInfo,omitempty"`
+}
+
+// TaskBlockListResponse wraps a Notion page-body block list.
+type TaskBlockListResponse struct {
+	Blocks     []TaskBlockDto `json:"blocks"`
+	NextCursor *string        `json:"nextCursor,omitempty"`
+	HasMore    bool           `json:"hasMore"`
+	AccessInfo *string        `json:"accessInfo,omitempty"`
+}
+
+// ── Param structs ──
+
+// TaskBoardListParams parameterises GET /tasks/boards.
+type TaskBoardListParams struct {
+	Provider string
+	Limit    int
+	Cursor   string
+	Page     int
+}
+
+// TaskItemListParams parameterises GET /tasks/boards/{id}/items.
+type TaskItemListParams struct {
+	Provider string
+	BoardID  string
+	Limit    int
+	Cursor   string
+	Page     int
+	GroupID  string
+	Query    string
+	Status   string
+}
+
+// TaskSearchParams parameterises GET /tasks/items/search.
+type TaskSearchParams struct {
+	Provider string
+	Query    string
+	Limit    int
+	BoardIDs []string
+}
+
+// TaskBlockListParams parameterises GET /tasks/items/{id}/blocks.
+type TaskBlockListParams struct {
+	Provider string
+	ItemID   string
+	Limit    int
+	Cursor   string
+}
+
+// ── Request bodies ──
+
+// CreateTaskItemRequest is the POST /tasks/boards/{id}/items body.
+type CreateTaskItemRequest struct {
+	Name    string            `json:"name"`
+	GroupID *string           `json:"groupId,omitempty"`
+	Fields  map[string]string `json:"fields,omitempty"`
+}
+
+// UpdateTaskItemRequest is the PATCH /tasks/items/{id} body. Only the keys
+// in Fields are updated; omitted keys are left untouched. Empty map -> 400.
+type UpdateTaskItemRequest struct {
+	Fields map[string]string `json:"fields"`
+}
+
+// AddTaskCommentRequest is the POST /tasks/items/{id}/comments body.
+type AddTaskCommentRequest struct {
+	Body string `json:"body"`
+}
+
+// AppendBlockInput is one entry of an AppendBlocksRequest.
+type AppendBlockInput struct {
+	Type     string                 `json:"type"`
+	Text     string                 `json:"text"`
+	Metadata map[string]interface{} `json:"metadata,omitempty"`
+}
+
+// AppendBlocksRequest is the POST /tasks/items/{id}/blocks body (Notion).
+type AppendBlocksRequest struct {
+	Blocks []AppendBlockInput `json:"blocks"`
+}
+
+// ── Mutation results ──
+
+// TaskItemResult is returned by POST/PATCH on items. RejectedFields lists
+// keys stripped by the token's writability mask (HTTP 200 still — only
+// "every field rejected" becomes 403 NO_WRITABLE_FIELDS).
+type TaskItemResult struct {
+	Provider       *string      `json:"provider,omitempty"`
+	Success        bool         `json:"success"`
+	ItemID         *string      `json:"itemId,omitempty"`
+	Item           *TaskItemDto `json:"item,omitempty"`
+	ErrorCode      *string      `json:"errorCode,omitempty"`
+	ErrorMessage   *string      `json:"errorMessage,omitempty"`
+	RejectedFields []string     `json:"rejectedFields,omitempty"`
+}
+
+// TaskOperationResult is returned by DELETE /tasks/items/{id}.
+type TaskOperationResult struct {
+	Provider     *string `json:"provider,omitempty"`
+	Success      bool    `json:"success"`
+	ErrorCode    *string `json:"errorCode,omitempty"`
+	ErrorMessage *string `json:"errorMessage,omitempty"`
+}
+
+// TaskCommentResult is returned by POST /tasks/items/{id}/comments.
+type TaskCommentResult struct {
+	Provider     *string `json:"provider,omitempty"`
+	Success      bool    `json:"success"`
+	CommentID    *string `json:"commentId,omitempty"`
+	ErrorCode    *string `json:"errorCode,omitempty"`
+	ErrorMessage *string `json:"errorMessage,omitempty"`
+}
+
+// AppendBlocksResponse is returned by POST /tasks/items/{id}/blocks.
+type AppendBlocksResponse struct {
+	Success        bool    `json:"success"`
+	BlocksAppended int     `json:"blocksAppended"`
+	Error          *string `json:"error,omitempty"`
+	ErrorCode      *string `json:"errorCode,omitempty"`
 }

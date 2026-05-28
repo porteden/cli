@@ -126,10 +126,10 @@ func CompactEmailsResponse(resp *api.EmailsResponse, opts CompactOptions) *api.E
 
 	compacted := &api.EmailsResponse{
 		Emails:        make([]api.Email, len(resp.Emails)),
-		TotalCount:    resp.TotalCount,
 		HasMore:       resp.HasMore,
 		NextPageToken: resp.NextPageToken,
 		AccessInfo:    resp.AccessInfo,
+		AuthWarnings:  resp.AuthWarnings,
 	}
 
 	for i, email := range resp.Emails {
@@ -202,6 +202,192 @@ func CompactDriveFilesResponse(resp *api.DriveFilesResponse, opts CompactOptions
 	}
 
 	return compacted
+}
+
+// CompactSheetBulkContentResponse trims per-tab values to a reasonable head
+// in compact mode so an LLM agent doesn't drown in untouched ranges. The
+// Clipped/FullRange hints from the server are preserved so the agent still
+// knows where to drill in.
+func CompactSheetBulkContentResponse(resp *api.SheetBulkContentResponse, opts CompactOptions) *api.SheetBulkContentResponse {
+	if resp == nil {
+		return nil
+	}
+
+	const maxRowsPerTab = 25
+	tabs := make([]api.SheetBulkContentTab, len(resp.Sheets))
+	for i, t := range resp.Sheets {
+		ct := t
+		if len(ct.Values) > maxRowsPerTab {
+			ct.Values = ct.Values[:maxRowsPerTab]
+			ct.Clipped = true
+			// If the server didn't already provide a drill-in range (i.e. the
+			// tab fit upstream but we just trimmed it for the agent), seed
+			// FullRange from the returned range so the agent has a concrete
+			// re-read target. Without this, "clipped" with no FullRange would
+			// be a dead end.
+			if ct.FullRange == nil {
+				r := ct.Range
+				ct.FullRange = &r
+			}
+		}
+		tabs[i] = ct
+	}
+
+	return &api.SheetBulkContentResponse{
+		SpreadsheetID: resp.SpreadsheetID,
+		Title:         resp.Title,
+		Sheets:        tabs,
+		AccessInfo:    resp.AccessInfo,
+	}
+}
+
+// ==================== TASKS COMPACT ====================
+
+const (
+	taskMaxAssignees    = 10
+	taskMaxLabels       = 10
+	taskMaxColumnValues = 10
+)
+
+// compactTaskItem trims a single item in place (value receiver — Go pass-by-value).
+// Structural fields (ID, GroupID, GroupName) are never touched — they're the
+// caller's only way to address the item once other fields are masked.
+func compactTaskItem(item api.TaskItemDto, opts CompactOptions) api.TaskItemDto {
+	if item.Description != nil && opts.MaxDescriptionLength > 0 && len(*item.Description) > opts.MaxDescriptionLength {
+		s := (*item.Description)[:opts.MaxDescriptionLength-3] + "..."
+		item.Description = &s
+	}
+	if len(item.Assignees) > taskMaxAssignees {
+		item.Assignees = item.Assignees[:taskMaxAssignees]
+	}
+	if len(item.Labels) > taskMaxLabels {
+		item.Labels = item.Labels[:taskMaxLabels]
+	}
+	if len(item.ColumnValues) > taskMaxColumnValues {
+		item.ColumnValues = item.ColumnValues[:taskMaxColumnValues]
+	}
+	// Drop embedded comments — they're available via `tasks comments <itemId>`.
+	item.Comments = nil
+
+	// Recurse one level into SubItems; deeper hierarchies are rare and
+	// dropping them keeps payloads bounded.
+	if len(item.SubItems) > 0 {
+		subs := make([]api.TaskItemDto, len(item.SubItems))
+		for i, sub := range item.SubItems {
+			sub.SubItems = nil
+			subs[i] = compactTaskItem(sub, opts)
+		}
+		item.SubItems = subs
+	}
+	return item
+}
+
+// CompactTaskItem trims a single TaskItemDto. Returns the compacted item
+// (or nil if input was nil).
+func CompactTaskItem(item *api.TaskItemDto, opts CompactOptions) *api.TaskItemDto {
+	if item == nil {
+		return nil
+	}
+	compacted := compactTaskItem(*item, opts)
+	return &compacted
+}
+
+// CompactTaskItemsResponse trims every item in a list response.
+func CompactTaskItemsResponse(resp *api.TaskItemsResponse, opts CompactOptions) *api.TaskItemsResponse {
+	if resp == nil {
+		return nil
+	}
+	items := make([]api.TaskItemDto, len(resp.Items))
+	for i, item := range resp.Items {
+		items[i] = compactTaskItem(item, opts)
+	}
+	return &api.TaskItemsResponse{
+		Provider:   resp.Provider,
+		Items:      items,
+		NextCursor: resp.NextCursor,
+		NextPage:   resp.NextPage,
+		TotalCount: resp.TotalCount,
+		AccessInfo: resp.AccessInfo,
+	}
+}
+
+// CompactTaskItemResponse trims a single-item response.
+func CompactTaskItemResponse(resp *api.TaskItemResponse, opts CompactOptions) *api.TaskItemResponse {
+	if resp == nil {
+		return nil
+	}
+	return &api.TaskItemResponse{
+		Provider:   resp.Provider,
+		Item:       CompactTaskItem(resp.Item, opts),
+		AccessInfo: resp.AccessInfo,
+	}
+}
+
+// CompactTaskSearchResponse trims each search result's embedded item.
+func CompactTaskSearchResponse(resp *api.TaskSearchResponse, opts CompactOptions) *api.TaskSearchResponse {
+	if resp == nil {
+		return nil
+	}
+	results := make([]api.TaskSearchResultDto, len(resp.Results))
+	for i, r := range resp.Results {
+		results[i] = api.TaskSearchResultDto{
+			BoardID:   r.BoardID,
+			BoardName: r.BoardName,
+			Item:      compactTaskItem(r.Item, opts),
+		}
+	}
+	return &api.TaskSearchResponse{
+		Provider:       resp.Provider,
+		Query:          resp.Query,
+		Results:        results,
+		TotalResults:   resp.TotalResults,
+		BoardsSearched: resp.BoardsSearched,
+		BoardsFailed:   resp.BoardsFailed,
+		AccessInfo:     resp.AccessInfo,
+	}
+}
+
+// CompactTaskItemResult trims the embedded Item on create/update responses.
+// The error fields are left untouched.
+func CompactTaskItemResult(resp *api.TaskItemResult, opts CompactOptions) *api.TaskItemResult {
+	if resp == nil {
+		return nil
+	}
+	return &api.TaskItemResult{
+		Provider:       resp.Provider,
+		Success:        resp.Success,
+		ItemID:         resp.ItemID,
+		Item:           CompactTaskItem(resp.Item, opts),
+		ErrorCode:      resp.ErrorCode,
+		ErrorMessage:   resp.ErrorMessage,
+		RejectedFields: resp.RejectedFields,
+	}
+}
+
+// CompactTaskBlockListResponse truncates each block's text. Metadata is small
+// (typically a single language or checked field) and kept intact.
+func CompactTaskBlockListResponse(resp *api.TaskBlockListResponse, opts CompactOptions) *api.TaskBlockListResponse {
+	if resp == nil {
+		return nil
+	}
+	blocks := make([]api.TaskBlockDto, len(resp.Blocks))
+	for i, b := range resp.Blocks {
+		if b.Text != nil && opts.MaxDescriptionLength > 0 && len(*b.Text) > opts.MaxDescriptionLength {
+			s := (*b.Text)[:opts.MaxDescriptionLength-3] + "..."
+			b.Text = &s
+		}
+		// Drop richText (HTML) in compact mode — the plain text suffices.
+		b.RichText = nil
+		// Drop nested children — block trees are walked via separate calls.
+		b.Children = nil
+		blocks[i] = b
+	}
+	return &api.TaskBlockListResponse{
+		Blocks:     blocks,
+		NextCursor: resp.NextCursor,
+		HasMore:    resp.HasMore,
+		AccessInfo: resp.AccessInfo,
+	}
 }
 
 // CompactThreadResponse applies compact transformations to a thread response

@@ -47,7 +47,9 @@ Email:
 
 Drive:
   porteden drive files           List/search files
-  porteden drive upload          Upload a file
+  porteden drive content         Read text content of a file (one call)
+  porteden drive create          Create file with inline UTF-8 content
+  porteden drive upload          Upload a binary file
   porteden drive download        Get file download/export links
   porteden drive share           Share a file
   porteden drive delete          Move file to trash
@@ -55,13 +57,37 @@ Drive:
 Docs (Google Docs):
   porteden docs read             Read document content
   porteden docs edit             Edit document (append, insert, replace)
-  porteden docs create           Create a new Google Doc
+  porteden docs create           Create a new Google Doc (optionally seeded)
 
 Sheets (Google Sheets):
   porteden sheets read           Read cell values
+  porteden sheets content        Bulk-read all tabs in one call
   porteden sheets write          Write cell values
   porteden sheets append         Append rows
-  porteden sheets create         Create a new Google Sheet
+  porteden sheets create         Create a new Google Sheet (optionally seeded)
+
+Slides (Google Slides):
+  porteden slides info           Get deck metadata (per-slide titles)
+  porteden slides read           Read deck text + speaker notes
+  porteden slides create         Create a new Google Slides deck
+
+Tasks (Monday, Asana, Jira, Linear, Notion):
+  porteden tasks providers       List connected task providers
+  porteden tasks boards          List boards in scope
+  porteden tasks items <board>   List items on a board
+  porteden tasks create <board>  Create an item
+  porteden tasks update <item>   Update an item
+  porteden tasks delete <item>   Delete (or archive) an item
+  porteden tasks search          Cross-board item search
+  porteden tasks comments <item> List/add comments
+  porteden tasks blocks <item>   Read Notion page-body blocks
+
+Provider-specific (auto-set --provider):
+  porteden notion ...            Notion-only (incl. blocks-append)
+  porteden monday ...            Monday.com
+  porteden asana ...             Asana
+  porteden jira ...              Jira Cloud
+  porteden linear ...            Linear
 
 System:
   porteden update                Update to the latest version
@@ -111,6 +137,13 @@ func init() {
 	rootCmd.AddCommand(driveCmd)
 	rootCmd.AddCommand(docsCmd)
 	rootCmd.AddCommand(sheetsCmd)
+	rootCmd.AddCommand(slidesCmd)
+	rootCmd.AddCommand(tasksCmd)
+	rootCmd.AddCommand(notionCmd)
+	rootCmd.AddCommand(mondayCmd)
+	rootCmd.AddCommand(asanaCmd)
+	rootCmd.AddCommand(jiraCmd)
+	rootCmd.AddCommand(linearCmd)
 	rootCmd.AddCommand(selfUpdateCmd)
 	rootCmd.AddCommand(uninstallCmd)
 }

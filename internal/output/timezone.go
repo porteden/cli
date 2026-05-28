@@ -33,6 +33,16 @@ func FormatLocalTime(utc time.Time) string {
 	return utc.In(GetOutputLocation()).Format(time.RFC3339)
 }
 
+// FormatLocalTimePtr formats a nullable UTC time pointer; returns "" on nil
+// so the caller doesn't have to branch. Mirrors the wire's "field absent ≡
+// no value" contract for our nullable DTO fields.
+func FormatLocalTimePtr(utc *time.Time) string {
+	if utc == nil {
+		return ""
+	}
+	return FormatLocalTime(*utc)
+}
+
 // GetLocalStart returns the local start time string.
 // If startLocal is provided and non-empty, it's returned as-is.
 // Otherwise, startUtc is converted to local time.

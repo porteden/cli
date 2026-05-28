@@ -139,7 +139,7 @@ Examples:
 			}
 			fmt.Println()
 		} else {
-			return fmt.Errorf("failed to send email: %s", resp.ErrorMessage)
+			return fmt.Errorf("failed to send email: %s", actionErrorString(resp))
 		}
 
 		return nil
@@ -180,7 +180,7 @@ Examples:
 			}
 			fmt.Println()
 		} else {
-			return fmt.Errorf("failed to send reply: %s", resp.ErrorMessage)
+			return fmt.Errorf("failed to send reply: %s", actionErrorString(resp))
 		}
 
 		return nil
@@ -221,7 +221,7 @@ Examples:
 			}
 			fmt.Println()
 		} else {
-			return fmt.Errorf("failed to forward email: %s", resp.ErrorMessage)
+			return fmt.Errorf("failed to forward email: %s", actionErrorString(resp))
 		}
 
 		return nil
@@ -316,6 +316,7 @@ func init() {
 	sendEmailCmd.Flags().String("body-type", "html", "Body type: html or text")
 	sendEmailCmd.Flags().String("importance", "normal", "Importance: low, normal, high")
 	sendEmailCmd.Flags().Int64("connection-id", 0, "Specific connection to send from")
+	sendEmailCmd.Flags().String("send-from", "", "Mailbox email address to send from (multi-mailbox tokens)")
 	_ = sendEmailCmd.MarkFlagRequired("to")
 	_ = sendEmailCmd.MarkFlagRequired("subject")
 
@@ -479,6 +480,10 @@ func buildSendEmailRequest(cmd *cobra.Command) (api.SendEmailRequest, error) {
 		req.ConnectionID = &connID
 	}
 
+	if sendFrom, _ := cmd.Flags().GetString("send-from"); sendFrom != "" {
+		req.SendFrom = sendFrom
+	}
+
 	return req, nil
 }
 
@@ -578,6 +583,23 @@ func getBodyContent(cmd *cobra.Command) (string, error) {
 	}
 
 	return bodyStr, nil
+}
+
+// actionErrorString returns a user-facing failure description for a
+// send/reply/forward response, preferring the human message but falling
+// back to the structured errorCode so policy denials like
+// ACCESS_RESTRICTED stay visible even without a message.
+func actionErrorString(resp *api.EmailActionResponse) string {
+	if resp.ErrorMessage != "" && resp.ErrorCode != "" {
+		return fmt.Sprintf("%s (%s)", resp.ErrorMessage, resp.ErrorCode)
+	}
+	if resp.ErrorMessage != "" {
+		return resp.ErrorMessage
+	}
+	if resp.ErrorCode != "" {
+		return resp.ErrorCode
+	}
+	return "unknown error"
 }
 
 // parseParticipant parses a participant string.

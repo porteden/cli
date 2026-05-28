@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/porteden/cli/internal/apierr"
@@ -381,10 +382,14 @@ func (c *Client) GetEmails(params EmailParams) (*EmailsResponse, error) {
 	return &response, nil
 }
 
-// GetAllEmails fetches all emails by auto-paginating through results
+// GetAllEmails fetches all emails by auto-paginating through results.
+// Each page already refills toward `limit` from subsequent pages when the
+// firewall trims the first batch; we iterate until HasMore is false or the
+// safety cap fires.
 func (c *Client) GetAllEmails(params EmailParams) (*EmailsResponse, error) {
 	var allEmails []Email
 	var accessInfo string
+	var authWarnings []string
 	const maxPages = 100
 
 	for page := 0; page < maxPages; page++ {
@@ -395,12 +400,13 @@ func (c *Client) GetAllEmails(params EmailParams) (*EmailsResponse, error) {
 
 		allEmails = append(allEmails, resp.Emails...)
 		accessInfo = resp.AccessInfo
+		authWarnings = resp.AuthWarnings
 
 		if !resp.HasMore || resp.NextPageToken == "" {
 			return &EmailsResponse{
-				Emails:     allEmails,
-				TotalCount: len(allEmails),
-				AccessInfo: accessInfo,
+				Emails:       allEmails,
+				AccessInfo:   accessInfo,
+				AuthWarnings: authWarnings,
 			}, nil
 		}
 
@@ -409,23 +415,22 @@ func (c *Client) GetAllEmails(params EmailParams) (*EmailsResponse, error) {
 
 	// Safety: return what we have after hitting page limit
 	return &EmailsResponse{
-		Emails:     allEmails,
-		TotalCount: len(allEmails),
-		HasMore:    true,
-		AccessInfo: accessInfo,
+		Emails:       allEmails,
+		HasMore:      true,
+		AccessInfo:   accessInfo,
+		AuthWarnings: authWarnings,
 	}, nil
 }
 
+// Email/thread IDs are prefixed (`google:…`, `m365:…`); url.PathEscape
+// turns the `:` into `%3A` as the API requires when embedding in the path.
+const emailBase = "/api/access/email"
+
 // GetEmail returns a single email by ID
 func (c *Client) GetEmail(emailID string, includeBody bool) (*SingleEmailResponse, error) {
-	v := url.Values{}
+	path := emailBase + "/messages/" + url.PathEscape(emailID)
 	if !includeBody {
-		v.Set("includeBody", "false")
-	}
-
-	path := "/api/access/email/messages/" + emailID
-	if len(v) > 0 {
-		path += "?" + v.Encode()
+		path += "?includeBody=false"
 	}
 
 	body, err := c.Get(path)
@@ -443,13 +448,13 @@ func (c *Client) GetEmail(emailID string, includeBody bool) (*SingleEmailRespons
 
 // GetThread returns all messages in a thread by ID
 func (c *Client) GetThread(threadID string) (*ThreadResponse, error) {
-	path := "/api/access/email/threads/" + threadID
+	path := emailBase + "/threads/" + url.PathEscape(threadID)
 	body, err := c.Get(path)
 	if err != nil {
 		return nil, err
 	}
 
-	// The API may wrap the thread in a "thread" key
+	// The API may wrap the thread in a "thread" key with accessInfo at the top level
 	var wrapper struct {
 		Thread     ThreadResponse `json:"thread"`
 		AccessInfo string         `json:"accessInfo,omitempty"`
@@ -464,7 +469,7 @@ func (c *Client) GetThread(threadID string) (*ThreadResponse, error) {
 
 // SendEmail sends a new email
 func (c *Client) SendEmail(req SendEmailRequest) (*EmailActionResponse, error) {
-	body, err := c.Post("/api/access/email/messages/send", req)
+	body, err := c.Post(emailBase+"/messages/send", req)
 	if err != nil {
 		return nil, err
 	}
@@ -479,7 +484,7 @@ func (c *Client) SendEmail(req SendEmailRequest) (*EmailActionResponse, error) {
 
 // ReplyToEmail replies to an existing email
 func (c *Client) ReplyToEmail(emailID string, req ReplyEmailRequest) (*EmailActionResponse, error) {
-	path := "/api/access/email/messages/" + emailID + "/reply"
+	path := emailBase + "/messages/" + url.PathEscape(emailID) + "/reply"
 	body, err := c.Post(path, req)
 	if err != nil {
 		return nil, err
@@ -495,7 +500,7 @@ func (c *Client) ReplyToEmail(emailID string, req ReplyEmailRequest) (*EmailActi
 
 // ForwardEmail forwards an email to specified recipients
 func (c *Client) ForwardEmail(emailID string, req ForwardEmailRequest) (*EmailActionResponse, error) {
-	path := "/api/access/email/messages/" + emailID + "/forward"
+	path := emailBase + "/messages/" + url.PathEscape(emailID) + "/forward"
 	body, err := c.Post(path, req)
 	if err != nil {
 		return nil, err
@@ -511,14 +516,14 @@ func (c *Client) ForwardEmail(emailID string, req ForwardEmailRequest) (*EmailAc
 
 // DeleteEmail deletes (trashes) an email
 func (c *Client) DeleteEmail(emailID string) error {
-	path := "/api/access/email/messages/" + emailID
+	path := emailBase + "/messages/" + url.PathEscape(emailID)
 	_, err := c.Delete(path)
 	return err
 }
 
 // ModifyEmail modifies email properties (read status, labels)
 func (c *Client) ModifyEmail(emailID string, req ModifyEmailRequest) error {
-	path := "/api/access/email/messages/" + emailID
+	path := emailBase + "/messages/" + url.PathEscape(emailID)
 	_, err := c.Patch(path, req)
 	return err
 }
@@ -686,6 +691,41 @@ func (c *Client) GetDriveFile(fileID string) (*SingleDriveFileResponse, error) {
 	}
 
 	return &response, nil
+}
+
+// GetDriveFileContent returns the textual content of a file. For Google
+// Workspace types (Sheets, Slides) the response steers to the dedicated
+// endpoint via Readable=false + Reason; the HTTP status is always 200.
+func (c *Client) GetDriveFileContent(fileID string) (*DriveFileContentResponse, error) {
+	path := driveBase + "/files/" + url.PathEscape(fileID) + "/content"
+	body, err := c.Get(path)
+	if err != nil {
+		return nil, err
+	}
+
+	var response DriveFileContentResponse
+	if err := json.Unmarshal(body, &response); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return &response, nil
+}
+
+// CreateDriveFile creates a file with inline UTF-8 text content (POST /files).
+// For Workspace target MIME types, Drive auto-imports the content; otherwise
+// the file is stored as-is. Use UploadDriveFile for binary content.
+func (c *Client) CreateDriveFile(req CreateDriveFileWithContentRequest) (*DriveOperationResult, error) {
+	respBody, err := c.Post(driveBase+"/files", req)
+	if err != nil {
+		return nil, err
+	}
+
+	var result DriveOperationResult
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return &result, nil
 }
 
 // GetDriveFileLinks returns view/download/export links for a file
@@ -935,6 +975,82 @@ func (c *Client) AppendSheetRows(fileID string, req AppendSheetRowsRequest) (*Dr
 	return &result, nil
 }
 
+// GetSheetBulkContent reads every tab of a spreadsheet in one upstream call.
+// Pass nil/empty ranges to use the metadata-driven default (capped per tab by
+// maxRowsPerSheet; 0 means use the server default of 200). Tabs with more
+// data than was returned are annotated with Clipped=true and a FullRange
+// usable directly against /values.
+func (c *Client) GetSheetBulkContent(fileID string, ranges []string, maxRowsPerSheet int) (*SheetBulkContentResponse, error) {
+	v := url.Values{}
+	if len(ranges) > 0 {
+		v.Set("ranges", strings.Join(ranges, ","))
+	}
+	if maxRowsPerSheet > 0 {
+		v.Set("maxRowsPerSheet", strconv.Itoa(maxRowsPerSheet))
+	}
+
+	path := driveBase + "/sheets/" + url.PathEscape(fileID) + "/content"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+
+	body, err := c.Get(path)
+	if err != nil {
+		return nil, err
+	}
+
+	var response SheetBulkContentResponse
+	if err := json.Unmarshal(body, &response); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return &response, nil
+}
+
+// ==================== SLIDES METHODS ====================
+
+// GetSlidesMetadata returns deck title and per-slide index+title.
+func (c *Client) GetSlidesMetadata(fileID string) (*SlidesMetadataResponse, error) {
+	path := driveBase + "/slides/" + url.PathEscape(fileID)
+	body, err := c.Get(path)
+	if err != nil {
+		return nil, err
+	}
+
+	var response SlidesMetadataResponse
+	if err := json.Unmarshal(body, &response); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return &response, nil
+}
+
+// GetSlidesContent returns deck content. format="" defaults to text.
+// "structured" returns raw Slides API JSON.
+func (c *Client) GetSlidesContent(fileID, format string) (*SlidesContentResponse, error) {
+	v := url.Values{}
+	if format != "" && format != "text" {
+		v.Set("format", format)
+	}
+
+	path := driveBase + "/slides/" + url.PathEscape(fileID) + "/content"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+
+	body, err := c.Get(path)
+	if err != nil {
+		return nil, err
+	}
+
+	var response SlidesContentResponse
+	if err := json.Unmarshal(body, &response); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return &response, nil
+}
+
 // GetAllEvents fetches all events by auto-paginating through results
 func (c *Client) GetAllEvents(params EventParams) (*EventsResponse, error) {
 	var allEvents []Event
@@ -975,4 +1091,479 @@ func (c *Client) GetAllEvents(params EventParams) (*EventsResponse, error) {
 
 		offset += resp.Meta.Count
 	}
+}
+
+// ==================== TASKS METHODS ====================
+
+const tasksBase = "/api/access/tasks"
+
+// taskPaginationCap mirrors the drive safety cap on auto-paginated --all calls.
+const taskPaginationCap = 50
+
+// addProvider sets ?provider= when non-empty; tolerating empty lets the
+// backend auto-resolve single-provider accounts.
+func addProvider(v url.Values, provider string) {
+	if provider != "" {
+		v.Set("provider", provider)
+	}
+}
+
+// GetTaskProviders lists task providers connected to the account.
+func (c *Client) GetTaskProviders() (TaskProvidersResponse, error) {
+	body, err := c.Get(tasksBase + "/providers")
+	if err != nil {
+		return nil, err
+	}
+
+	var resp TaskProvidersResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+	return resp, nil
+}
+
+// GetTaskBoards returns one page of boards.
+func (c *Client) GetTaskBoards(params TaskBoardListParams) (*TaskBoardsResponse, error) {
+	v := url.Values{}
+	addProvider(v, params.Provider)
+	if params.Limit > 0 {
+		v.Set("limit", strconv.Itoa(params.Limit))
+	}
+	if params.Cursor != "" {
+		v.Set("cursor", params.Cursor)
+	}
+	if params.Page > 0 {
+		v.Set("page", strconv.Itoa(params.Page))
+	}
+
+	path := tasksBase + "/boards"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+
+	body, err := c.Get(path)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp TaskBoardsResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+	return &resp, nil
+}
+
+// GetAllTaskBoards auto-paginates boards up to taskPaginationCap pages.
+// Advances by cursor when present, otherwise by page; returns a partial
+// result with NextCursor/NextPage still set when the cap is hit.
+func (c *Client) GetAllTaskBoards(params TaskBoardListParams) (*TaskBoardsResponse, error) {
+	var all []TaskBoardDto
+	var provider, accessInfo *string
+
+	for page := 0; page < taskPaginationCap; page++ {
+		resp, err := c.GetTaskBoards(params)
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, resp.Boards...)
+		provider = resp.Provider
+		accessInfo = resp.AccessInfo
+
+		if !advanceTaskCursor(&params.Cursor, &params.Page, resp.NextCursor, resp.NextPage) {
+			return &TaskBoardsResponse{
+				Provider:   provider,
+				Boards:     all,
+				AccessInfo: accessInfo,
+			}, nil
+		}
+	}
+
+	// Cap hit — preserve the last cursor/page so the caller can resume.
+	final := &TaskBoardsResponse{
+		Provider:   provider,
+		Boards:     all,
+		AccessInfo: accessInfo,
+	}
+	if params.Cursor != "" {
+		c := params.Cursor
+		final.NextCursor = &c
+	}
+	if params.Page > 0 {
+		p := params.Page
+		final.NextPage = &p
+	}
+	return final, nil
+}
+
+// GetTaskBoard returns one board's metadata (groups + columns).
+func (c *Client) GetTaskBoard(boardID, provider string) (*TaskBoardResponse, error) {
+	v := url.Values{}
+	addProvider(v, provider)
+
+	path := tasksBase + "/boards/" + url.PathEscape(boardID)
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+
+	body, err := c.Get(path)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp TaskBoardResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+	return &resp, nil
+}
+
+// GetBoardItems returns one page of items on a board.
+func (c *Client) GetBoardItems(params TaskItemListParams) (*TaskItemsResponse, error) {
+	v := url.Values{}
+	addProvider(v, params.Provider)
+	if params.Limit > 0 {
+		v.Set("limit", strconv.Itoa(params.Limit))
+	}
+	if params.Cursor != "" {
+		v.Set("cursor", params.Cursor)
+	}
+	if params.Page > 0 {
+		v.Set("page", strconv.Itoa(params.Page))
+	}
+	if params.GroupID != "" {
+		v.Set("groupId", params.GroupID)
+	}
+	if params.Query != "" {
+		v.Set("query", params.Query)
+	}
+	if params.Status != "" {
+		v.Set("status", params.Status)
+	}
+
+	path := tasksBase + "/boards/" + url.PathEscape(params.BoardID) + "/items"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+
+	body, err := c.Get(path)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp TaskItemsResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+	return &resp, nil
+}
+
+// GetAllBoardItems auto-paginates items up to taskPaginationCap pages.
+func (c *Client) GetAllBoardItems(params TaskItemListParams) (*TaskItemsResponse, error) {
+	var all []TaskItemDto
+	var provider, accessInfo *string
+	var totalCount *int
+
+	for page := 0; page < taskPaginationCap; page++ {
+		resp, err := c.GetBoardItems(params)
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, resp.Items...)
+		provider = resp.Provider
+		accessInfo = resp.AccessInfo
+		if resp.TotalCount != nil {
+			totalCount = resp.TotalCount
+		}
+
+		if !advanceTaskCursor(&params.Cursor, &params.Page, resp.NextCursor, resp.NextPage) {
+			return &TaskItemsResponse{
+				Provider:   provider,
+				Items:      all,
+				TotalCount: totalCount,
+				AccessInfo: accessInfo,
+			}, nil
+		}
+	}
+
+	final := &TaskItemsResponse{
+		Provider:   provider,
+		Items:      all,
+		TotalCount: totalCount,
+		AccessInfo: accessInfo,
+	}
+	if params.Cursor != "" {
+		c := params.Cursor
+		final.NextCursor = &c
+	}
+	if params.Page > 0 {
+		p := params.Page
+		final.NextPage = &p
+	}
+	return final, nil
+}
+
+// GetTaskItem returns a single item.
+func (c *Client) GetTaskItem(itemID, provider string) (*TaskItemResponse, error) {
+	v := url.Values{}
+	addProvider(v, provider)
+
+	path := tasksBase + "/items/" + url.PathEscape(itemID)
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+
+	body, err := c.Get(path)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp TaskItemResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+	return &resp, nil
+}
+
+// CreateTaskItem creates a new item on a board.
+func (c *Client) CreateTaskItem(boardID, provider string, req CreateTaskItemRequest) (*TaskItemResult, error) {
+	v := url.Values{}
+	addProvider(v, provider)
+
+	path := tasksBase + "/boards/" + url.PathEscape(boardID) + "/items"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+
+	respBody, err := c.Post(path, req)
+	if err != nil {
+		return nil, err
+	}
+
+	var result TaskItemResult
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+	return &result, nil
+}
+
+// UpdateTaskItem patches an existing item.
+func (c *Client) UpdateTaskItem(itemID, provider string, req UpdateTaskItemRequest) (*TaskItemResult, error) {
+	v := url.Values{}
+	addProvider(v, provider)
+
+	path := tasksBase + "/items/" + url.PathEscape(itemID)
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+
+	respBody, err := c.Patch(path, req)
+	if err != nil {
+		return nil, err
+	}
+
+	var result TaskItemResult
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+	return &result, nil
+}
+
+// DeleteTaskItem deletes (or archives, for Notion) an item.
+func (c *Client) DeleteTaskItem(itemID, provider string) (*TaskOperationResult, error) {
+	v := url.Values{}
+	addProvider(v, provider)
+
+	path := tasksBase + "/items/" + url.PathEscape(itemID)
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+
+	respBody, err := c.Delete(path)
+	if err != nil {
+		return nil, err
+	}
+
+	// The endpoint may legitimately return an empty body on success.
+	if len(respBody) == 0 {
+		return &TaskOperationResult{Success: true}, nil
+	}
+
+	var result TaskOperationResult
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+	return &result, nil
+}
+
+// GetItemComments lists comments on an item.
+func (c *Client) GetItemComments(itemID, provider string) (*TaskCommentsResponse, error) {
+	v := url.Values{}
+	addProvider(v, provider)
+
+	path := tasksBase + "/items/" + url.PathEscape(itemID) + "/comments"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+
+	body, err := c.Get(path)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp TaskCommentsResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+	return &resp, nil
+}
+
+// AddItemComment posts a new comment on an item.
+func (c *Client) AddItemComment(itemID, provider, body string) (*TaskCommentResult, error) {
+	v := url.Values{}
+	addProvider(v, provider)
+
+	path := tasksBase + "/items/" + url.PathEscape(itemID) + "/comments"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+
+	respBody, err := c.Post(path, AddTaskCommentRequest{Body: body})
+	if err != nil {
+		return nil, err
+	}
+
+	var result TaskCommentResult
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+	return &result, nil
+}
+
+// SearchTasks searches items across all in-scope boards (or the supplied subset).
+// Server-side single-shot — the API doesn't paginate this endpoint; bump Limit
+// (clamped to 1–200) to widen the result set.
+func (c *Client) SearchTasks(params TaskSearchParams) (*TaskSearchResponse, error) {
+	v := url.Values{}
+	addProvider(v, params.Provider)
+	v.Set("query", params.Query)
+	if params.Limit > 0 {
+		v.Set("limit", strconv.Itoa(params.Limit))
+	}
+	if len(params.BoardIDs) > 0 {
+		v.Set("boardIds", strings.Join(params.BoardIDs, ","))
+	}
+
+	path := tasksBase + "/items/search?" + v.Encode()
+	body, err := c.Get(path)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp TaskSearchResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+	return &resp, nil
+}
+
+// GetItemBlocks returns one page of Notion page-body blocks.
+func (c *Client) GetItemBlocks(params TaskBlockListParams) (*TaskBlockListResponse, error) {
+	v := url.Values{}
+	addProvider(v, params.Provider)
+	if params.Limit > 0 {
+		v.Set("limit", strconv.Itoa(params.Limit))
+	}
+	if params.Cursor != "" {
+		v.Set("cursor", params.Cursor)
+	}
+
+	path := tasksBase + "/items/" + url.PathEscape(params.ItemID) + "/blocks"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+
+	body, err := c.Get(path)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp TaskBlockListResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+	return &resp, nil
+}
+
+// GetAllItemBlocks auto-paginates blocks up to taskPaginationCap pages.
+func (c *Client) GetAllItemBlocks(params TaskBlockListParams) (*TaskBlockListResponse, error) {
+	var all []TaskBlockDto
+	var accessInfo *string
+
+	for page := 0; page < taskPaginationCap; page++ {
+		resp, err := c.GetItemBlocks(params)
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, resp.Blocks...)
+		accessInfo = resp.AccessInfo
+
+		if !resp.HasMore || resp.NextCursor == nil || *resp.NextCursor == "" {
+			return &TaskBlockListResponse{
+				Blocks:     all,
+				HasMore:    false,
+				AccessInfo: accessInfo,
+			}, nil
+		}
+		params.Cursor = *resp.NextCursor
+	}
+
+	cursor := params.Cursor
+	return &TaskBlockListResponse{
+		Blocks:     all,
+		HasMore:    true,
+		NextCursor: &cursor,
+		AccessInfo: accessInfo,
+	}, nil
+}
+
+// AppendItemBlocks appends blocks to a Notion page body.
+func (c *Client) AppendItemBlocks(itemID, provider string, blocks []AppendBlockInput) (*AppendBlocksResponse, error) {
+	v := url.Values{}
+	addProvider(v, provider)
+
+	path := tasksBase + "/items/" + url.PathEscape(itemID) + "/blocks"
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+
+	respBody, err := c.Post(path, AppendBlocksRequest{Blocks: blocks})
+	if err != nil {
+		return nil, err
+	}
+
+	var result AppendBlocksResponse
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+	return &result, nil
+}
+
+// advanceTaskCursor consumes the response's NextCursor/NextPage hints into the
+// params and reports whether the caller should fetch another page. Cursor wins
+// over page when both are non-nil (some providers report both). The unused
+// field is cleared so a prior iteration's value can't leak into the next
+// request when a provider switches modes (or when the caller seeded both
+// --cursor and --page).
+func advanceTaskCursor(cursor *string, page *int, nextCursor *string, nextPage *int) bool {
+	if nextCursor != nil && *nextCursor != "" {
+		*cursor = *nextCursor
+		*page = 0
+		return true
+	}
+	if nextPage != nil && *nextPage > 0 {
+		*page = *nextPage
+		*cursor = ""
+		return true
+	}
+	return false
 }

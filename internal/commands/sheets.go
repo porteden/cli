@@ -32,18 +32,42 @@ Examples:
 
 var sheetsCreateCmd = &cobra.Command{
 	Use:   "create",
-	Short: "Create a new Google Sheet",
-	Long: `Creates a new blank Google Spreadsheet via the Drive upload endpoint.
+	Short: "Create a new Google Sheet, optionally seeded with CSV content",
+	Long: `Creates a new Google Spreadsheet. Pass --csv-file (or --csv) to seed
+the first tab from a CSV in a single round-trip; the server imports CSV into
+the Workspace sheet format automatically.
 
 Examples:
   porteden sheets create --name "Q1 Budget"
+  porteden sheets create --name "Sales 2026" --csv-file ./sales.csv
   porteden sheets create --name "Data" --folder google:0B7_FOLDER`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name, _ := cmd.Flags().GetString("name")
 		folder, _ := cmd.Flags().GetString("folder")
+		csv, _ := cmd.Flags().GetString("csv")
+		csvFile, _ := cmd.Flags().GetString("csv-file")
 
 		if name == "" {
 			return errors.New("--name is required")
+		}
+		if csv != "" && csvFile != "" {
+			return errors.New("--csv and --csv-file are mutually exclusive")
+		}
+
+		content := csv
+		if csvFile != "" {
+			data, err := os.ReadFile(csvFile)
+			if err != nil {
+				return fmt.Errorf("cannot read csv file: %w", err)
+			}
+			content = string(data)
+		} else if csv != "" {
+			content = strings.ReplaceAll(csv, `\n`, "\n")
+		}
+
+		contentMime := ""
+		if content != "" {
+			contentMime = "text/csv"
 		}
 
 		client, err := getClient(cmd)
@@ -51,7 +75,7 @@ Examples:
 			return err
 		}
 
-		result, err := client.UploadDriveFile(name, "application/vnd.google-apps.spreadsheet", folder, "", []byte{})
+		result, err := createDriveFileOrBlank(client, name, "application/vnd.google-apps.spreadsheet", content, contentMime, folder, "")
 		if err != nil {
 			return formatError(err)
 		}
@@ -174,6 +198,54 @@ Examples:
 			Values:           values,
 			ValueInputOption: inputOption,
 		})
+		if err != nil {
+			return formatError(err)
+		}
+
+		output.PrintWithOptions(result, getOutputFormat(cmd), output.PrintOptions{
+			Compact: IsCompactMode(),
+		})
+		return nil
+	},
+}
+
+// ==================== BULK CONTENT (ALL TABS) ====================
+
+var sheetsContentCmd = &cobra.Command{
+	Use:   "content <fileId>",
+	Short: "Read all tabs in one call (or supply explicit ranges)",
+	Long: `Reads every tab of the spreadsheet in a single upstream call.
+By default each tab is clipped to 200 rows × 26 columns; clipped tabs
+include a fullRange string you can feed straight into ` + "`porteden sheets read --range`" + `.
+
+Use --ranges to bypass the default and pass explicit A1 ranges through verbatim
+(no per-tab cap applies).
+
+Examples:
+  porteden sheets content google:SHEETID -jc
+  porteden sheets content google:SHEETID --max-rows 500
+  porteden sheets content google:SHEETID --ranges "Summary!A1:C100,Raw Data!A:Z"`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		rangesStr, _ := cmd.Flags().GetString("ranges")
+		maxRows, _ := cmd.Flags().GetInt("max-rows")
+
+		var ranges []string
+		if rangesStr != "" {
+			for _, r := range strings.Split(rangesStr, ",") {
+				r = strings.TrimSpace(r)
+				if r != "" {
+					ranges = append(ranges, r)
+				}
+			}
+		}
+
+		client, err := getClient(cmd)
+		if err != nil {
+			return err
+		}
+
+		result, err := client.GetSheetBulkContent(args[0], ranges, maxRows)
 		if err != nil {
 			return formatError(err)
 		}
@@ -385,9 +457,15 @@ func init() {
 	// create flags
 	sheetsCreateCmd.Flags().String("name", "", "Spreadsheet name")
 	sheetsCreateCmd.Flags().String("folder", "", "Target folder ID (provider-prefixed). Omit for root.")
+	sheetsCreateCmd.Flags().String("csv", "", `Inline CSV content to seed the first tab (use \\n for row separator)`)
+	sheetsCreateCmd.Flags().String("csv-file", "", "Path to a CSV file to seed the first tab")
 
 	// read flags
 	sheetsReadCmd.Flags().String("range", "", `Cell range in A1 notation (e.g., Sheet1!A1:C10 or Sheet1)`)
+
+	// content (bulk) flags
+	sheetsContentCmd.Flags().String("ranges", "", "Comma-separated A1 ranges (e.g., 'Sheet1,Summary!A:C'). Pass-through, no per-tab cap.")
+	sheetsContentCmd.Flags().Int("max-rows", 0, "Per-tab row cap when --ranges is omitted (server default 200, max 5000)")
 
 	// write flags
 	sheetsWriteCmd.Flags().String("range", "", `Target range in A1 notation (e.g., Sheet1!A1:C3)`)
@@ -415,6 +493,7 @@ func init() {
 	// Register sub-commands
 	sheetsCmd.AddCommand(sheetsCreateCmd)
 	sheetsCmd.AddCommand(sheetsInfoCmd)
+	sheetsCmd.AddCommand(sheetsContentCmd)
 	sheetsCmd.AddCommand(sheetsReadCmd)
 	sheetsCmd.AddCommand(sheetsWriteCmd)
 	sheetsCmd.AddCommand(sheetsAppendCmd)
