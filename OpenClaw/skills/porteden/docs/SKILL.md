@@ -1,6 +1,6 @@
 ---
 name: porteden-docs
-description: Secure Google Docs Management - permission-based create, read, and edit doc content; manage sharing, permissions, rename and delete.
+description: Secure Google Docs Management. Use when the user wants to create, read, or edit Google Docs content; or manage sharing, permissions, renames, and deletes.
 homepage: https://porteden.com
 metadata: {"openclaw":{"emoji":"📄","requires":{"bins":["porteden"],"env":["PE_API_KEY"]},"primaryEnv":"PE_API_KEY","install":[{"id":"brew","kind":"brew","formula":"porteden/tap/porteden","bins":["porteden"],"label":"Install porteden (brew)"},{"id":"go","kind":"go","module":"github.com/porteden/cli/cmd/porteden@latest","bins":["porteden"],"label":"Install porteden (go)"}]}}
 ---
@@ -11,7 +11,7 @@ Use `porteden docs` for Google Docs content operations and file management. **Us
 
 If `porteden` is not installed: `brew install porteden/tap/porteden` (or `go install github.com/porteden/cli/cmd/porteden@latest`).
 
-Setup (once)
+## Setup (once)
 
 - **Browser login (recommended):** `porteden auth login` — opens browser, credentials stored in system keyring
 - **Direct token:** `porteden auth login --token <key>` — stored in system keyring
@@ -23,8 +23,10 @@ Setup (once)
 
 ### Content
 
-- Create new doc: `porteden docs create --name "Meeting Notes"`
+- Create new doc (blank): `porteden docs create --name "Meeting Notes"`
 - Create in folder: `porteden docs create --name "Brief" --folder google:0B7_FOLDER`
+- Create with inline content: `porteden docs create --name "Draft" --content "Initial paragraph."`
+- Create from markdown file: `porteden docs create --name "Sprint Plan" --content-file ./plan.md --content-mime-type text/markdown`
 - Read content (plain text): `porteden docs read google:DOCID`
 - Read structured (full Google Docs API JSON): `porteden docs read google:DOCID --format structured -j`
 - Append text: `porteden docs edit google:DOCID --append "New paragraph."`
@@ -61,6 +63,8 @@ Setup (once)
 - `-jc` is shorthand for `--json --compact`: strips noise, limits fields, reduces tokens for AI agents.
 - **File IDs are always provider-prefixed** (e.g., `google:1BxiMVs0XRA5...`). Pass them as-is.
 - `porteden docs read` returns plain text by default; use `--format structured` for full API JSON with headings and formatting.
+- `porteden docs create` accepts optional `--content`/`--content-file` to seed the body in one round-trip. Default `--content-mime-type` is `text/plain`; pass `text/markdown` to import markdown headings/lists as Doc structure. Without content flags, a blank doc is created.
+- `--content` and `--content-file` are mutually exclusive on `docs create`.
 - `--find` and `--replace` are repeatable and must be used in matched pairs. `--ops-file` is mutually exclusive with inline edit flags.
 - `porteden docs download` returns **URLs only** — no binary content is streamed.
 - `accessInfo` in responses describes active token restrictions.

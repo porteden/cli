@@ -1,6 +1,6 @@
 ---
 name: porteden-drive
-description: Secure Google Drive Mnagement - list, search, upload, create folders, rename, move, share, and permissions (porteden secure alternative).
+description: Secure Google Drive Management. Use when the user wants to list, search, read text content, create files with inline content, upload binaries, create folders, rename, move, share, or manage permissions on Google Drive files (porteden secure alternative).
 homepage: https://porteden.com
 metadata: {"openclaw":{"emoji":"📂","requires":{"bins":["porteden"],"env":["PE_API_KEY"]},"primaryEnv":"PE_API_KEY","install":[{"id":"brew","kind":"brew","formula":"porteden/tap/porteden","bins":["porteden"],"label":"Install porteden (brew)"},{"id":"go","kind":"go","module":"github.com/porteden/cli/cmd/porteden@latest","bins":["porteden"],"label":"Install porteden (go)"}]}}
 ---
@@ -11,7 +11,7 @@ Use `porteden drive` for Google Drive file and folder management. **Use `-jc` fl
 
 If `porteden` is not installed: `brew install porteden/tap/porteden` (or `go install github.com/porteden/cli/cmd/porteden@latest`).
 
-Setup (once)
+## Setup (once)
 
 - **Browser login (recommended):** `porteden auth login` — opens browser, credentials stored in system keyring
 - **Direct token:** `porteden auth login --token <key>` — stored in system keyring
@@ -20,6 +20,8 @@ Setup (once)
 - Drive access requires a token with `driveAccessEnabled: true` and a connected Google account with Drive scopes.
 
 ## Drive commands (`porteden drive`)
+
+### List & inspect
 
 - List files: `porteden drive files -jc`
 - Search by keyword: `porteden drive files -q "budget report" -jc`
@@ -32,10 +34,27 @@ Setup (once)
 - Get file metadata: `porteden drive file google:FILEID -jc`
 - Get view/download links: `porteden drive download google:FILEID -jc`
 - List permissions: `porteden drive permissions google:FILEID -jc`
-- Upload file: `porteden drive upload --file ./report.pdf --name "Q1 Report.pdf"`
+
+### Read content
+
+- Read text content of any file: `porteden drive content google:FILEID`
+  - Google Docs export to `text/plain` inline
+  - Text-like files (text/\*, JSON, XML, YAML, CSV) return as-is
+  - Binary files return a `webViewLink` — open in browser
+  - Spreadsheets/presentations are steered to: `porteden sheets content` / `porteden slides read`
+
+### Create & upload
+
+- Create file with inline content: `porteden drive create --name "Notes.md" --mime-type text/markdown --content "# Notes"`
+- Create from local text file: `porteden drive create --name "Plan" --mime-type application/vnd.google-apps.document --content-file ./plan.md --content-mime-type text/markdown`
+- Create CSV file: `porteden drive create --name "Data.csv" --mime-type text/csv --content-file ./data.csv`
+- Upload binary file: `porteden drive upload --file ./report.pdf --name "Q1 Report.pdf"`
 - Upload to folder: `porteden drive upload --file ./data.csv --name "Data.csv" --folder google:0B7_FOLDER`
 - Create folder: `porteden drive mkdir --name "Project Files"`
 - Create folder in folder: `porteden drive mkdir --name "Reports" --parent google:0B7_FOLDER`
+
+### Manage
+
 - Rename: `porteden drive rename google:FILEID --name "New Name.pdf"`
 - Move: `porteden drive move google:FILEID --destination google:0B7_DEST_FOLDER`
 - Share with user: `porteden drive share google:FILEID --type user --role reader --email user@example.com`
@@ -51,6 +70,8 @@ Setup (once)
 - **File IDs are always provider-prefixed** (e.g., `google:1BxiMVs0XRA5...`). Pass them as-is.
 - `porteden drive files --all` auto-paginates (safety cap: 50 pages). Check `hasMore` in JSON output.
 - `porteden drive download` returns **URLs only** — no binary content is streamed.
+- `porteden drive content` is the **universal text reader** — use it instead of `download` when you need the textual content of a file. For Google Workspace types (Sheets, Slides) it steers to the dedicated commands (`porteden sheets content`, `porteden slides read`) via stderr hints.
+- `porteden drive create` uses **inline JSON** (UTF-8 text only, ≤ 10 MB). For binary content use `porteden drive upload`. For Workspace target MIME types (`application/vnd.google-apps.{document,spreadsheet,presentation}`) Drive auto-imports the content; otherwise the file is stored as-is.
 - `accessInfo` in responses describes active token restrictions. Always check it to understand what data may be limited.
 - `authWarnings` in list responses indicate provider connection issues.
 - `delete` moves to trash (reversible). Files can be restored from Google Drive trash.
