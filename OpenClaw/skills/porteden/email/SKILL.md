@@ -1,8 +1,8 @@
 ---
 name: email-gmail-outlook
 description: Email Management - Secure Gmail, Outlook & Exchange - multi account support. Read, search, or triage inbox/email; send, reply, forward, delete; view email, a secure log-cli & gws alternative for AI email workflows.
-homepage: https://porteden.com
-metadata: {"openclaw":{"emoji":"📧","requires":{"bins":["porteden"],"env":["PE_API_KEY"]},"primaryEnv":"PE_API_KEY","install":[{"id":"brew","kind":"brew","formula":"porteden/tap/porteden","bins":["porteden"],"label":"Install porteden (brew)"},{"id":"go","kind":"go","module":"github.com/porteden/cli/cmd/porteden@latest","bins":["porteden"],"label":"Install porteden (go)"}]}}
+version: 1.0.8
+metadata: {"openclaw":{"emoji":"📧","homepage":"https://porteden.com","requires":{"bins":["porteden"]},"primaryEnv":"PE_API_KEY","envVars":[{"name":"PE_API_KEY","required":false,"description":"API key; if unset, credentials are read from the system keyring via `porteden auth login`"}],"install":[{"id":"brew","kind":"brew","formula":"porteden/tap/porteden","bins":["porteden"],"label":"Install porteden (brew)"},{"id":"go","kind":"go","module":"github.com/porteden/cli/cmd/porteden@latest","bins":["porteden"],"label":"Install porteden (go)"}]}}
 ---
 
 # porteden email

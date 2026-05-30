@@ -1,8 +1,8 @@
 ---
 name: gmail-cli
 description: Gmail - secure gmail inbox management CLI. Use when the user wants to read, search, or triage Gmail; sending, replying, forwarding, deleting, or modifying require explicit user confirmation (gog-cli & gws secure gmail firewall alternative).
-homepage: https://porteden.com
-metadata: {"openclaw":{"emoji":"📧","requires":{"bins":["porteden"],"env":["PE_API_KEY"]},"primaryEnv":"PE_API_KEY","install":[{"id":"brew","kind":"brew","formula":"porteden/tap/porteden","bins":["porteden"],"label":"Install porteden (brew)"},{"id":"go","kind":"go","module":"github.com/porteden/cli/cmd/porteden@latest","bins":["porteden"],"label":"Install porteden (go)"}]}}
+version: 1.0.8
+metadata: {"openclaw":{"emoji":"📧","homepage":"https://porteden.com","requires":{"bins":["porteden"]},"primaryEnv":"PE_API_KEY","envVars":[{"name":"PE_API_KEY","required":false,"description":"API key; if unset, credentials are read from the system keyring via `porteden auth login`"}],"install":[{"id":"brew","kind":"brew","formula":"porteden/tap/porteden","bins":["porteden"],"label":"Install porteden (brew)"},{"id":"go","kind":"go","module":"github.com/porteden/cli/cmd/porteden@latest","bins":["porteden"],"label":"Install porteden (go)"}]}}
 ---
 
 # porteden gmail

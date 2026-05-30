@@ -1,8 +1,8 @@
 ---
-name: porteden-drive
-description: Secure Google Drive Management. Use when the user wants to list, search, read text content, create files with inline content, upload binaries, create folders, rename, move, share, or manage permissions on Google Drive files (porteden secure alternative).
-homepage: https://porteden.com
-metadata: {"openclaw":{"emoji":"📂","requires":{"bins":["porteden"],"env":["PE_API_KEY"]},"primaryEnv":"PE_API_KEY","install":[{"id":"brew","kind":"brew","formula":"porteden/tap/porteden","bins":["porteden"],"label":"Install porteden (brew)"},{"id":"go","kind":"go","module":"github.com/porteden/cli/cmd/porteden@latest","bins":["porteden"],"label":"Install porteden (go)"}]}}
+name: google-drive-secured
+description: Google Drive Secure Management. Use when the user wants to list, search, read text content, create files with inline content, upload binaries, create folders, rename, move, copy, share, or manage permissions on Google Drive files (porteden secure alternative).
+version: 1.0.8
+metadata: {"openclaw":{"emoji":"📂","homepage":"https://porteden.com","requires":{"bins":["porteden"]},"primaryEnv":"PE_API_KEY","envVars":[{"name":"PE_API_KEY","required":false,"description":"API key; if unset, credentials are read from the system keyring via `porteden auth login`"}],"install":[{"id":"brew","kind":"brew","formula":"porteden/tap/porteden","bins":["porteden"],"label":"Install porteden (brew)"},{"id":"go","kind":"go","module":"github.com/porteden/cli/cmd/porteden@latest","bins":["porteden"],"label":"Install porteden (go)"}]}}
 ---
 
 # porteden drive
@@ -57,6 +57,8 @@ If `porteden` is not installed: `brew install porteden/tap/porteden` (or `go ins
 
 - Rename: `porteden drive rename google:FILEID --name "New Name.pdf"`
 - Move: `porteden drive move google:FILEID --destination google:0B7_DEST_FOLDER`
+- Copy (duplicate): `porteden drive copy google:FILEID --name "Working copy"`
+- Copy into a folder: `porteden drive copy google:FILEID --folder google:0B7_DEST_FOLDER`
 - Share with user: `porteden drive share google:FILEID --type user --role reader --email user@example.com`
 - Share with domain: `porteden drive share google:FILEID --type domain --role reader --domain example.com`
 - Share publicly: `porteden drive share google:FILEID --type anyone --role reader`
@@ -72,6 +74,7 @@ If `porteden` is not installed: `brew install porteden/tap/porteden` (or `go ins
 - `porteden drive download` returns **URLs only** — no binary content is streamed.
 - `porteden drive content` is the **universal text reader** — use it instead of `download` when you need the textual content of a file. For Google Workspace types (Sheets, Slides) it steers to the dedicated commands (`porteden sheets content`, `porteden slides read`) via stderr hints.
 - `porteden drive create` uses **inline JSON** (UTF-8 text only, ≤ 10 MB). For binary content use `porteden drive upload`. For Workspace target MIME types (`application/vnd.google-apps.{document,spreadsheet,presentation}`) Drive auto-imports the content; otherwise the file is stored as-is.
+- `porteden drive copy` duplicates any Drive file — **including Google Docs/Sheets/Slides** (per-type wrappers `docs copy` / `sheets copy` / `slides copy` exist too). Both `--name` and `--folder` are optional (defaults: Google's "Copy of …" name, source's folder). Copy is **not idempotent** — calling twice creates two copies. **Folders cannot be copied** (returns `PROVIDER_ERROR`); SharePoint files aren't supported yet (`NOT_SUPPORTED`). Requires the `copy_file` permission on the token.
 - `accessInfo` in responses describes active token restrictions. Always check it to understand what data may be limited.
 - `authWarnings` in list responses indicate provider connection issues.
 - `delete` moves to trash (reversible). Files can be restored from Google Drive trash.

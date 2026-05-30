@@ -1,8 +1,8 @@
 ---
-name: porteden-docs
-description: Secure Google Docs Management. Use when the user wants to create, read, or edit Google Docs content; or manage sharing, permissions, renames, and deletes.
-homepage: https://porteden.com
-metadata: {"openclaw":{"emoji":"📄","requires":{"bins":["porteden"],"env":["PE_API_KEY"]},"primaryEnv":"PE_API_KEY","install":[{"id":"brew","kind":"brew","formula":"porteden/tap/porteden","bins":["porteden"],"label":"Install porteden (brew)"},{"id":"go","kind":"go","module":"github.com/porteden/cli/cmd/porteden@latest","bins":["porteden"],"label":"Install porteden (go)"}]}}
+name: google-docs-cli
+description: Google Docs Secure Management. Use when the user wants to create, read, or edit Google Docs content; or manage sharing, permissions, renames, and deletes.
+version: 1.0.8
+metadata: {"openclaw":{"emoji":"📄","homepage":"https://porteden.com","requires":{"bins":["porteden"]},"primaryEnv":"PE_API_KEY","envVars":[{"name":"PE_API_KEY","required":false,"description":"API key; if unset, credentials are read from the system keyring via `porteden auth login`"}],"install":[{"id":"brew","kind":"brew","formula":"porteden/tap/porteden","bins":["porteden"],"label":"Install porteden (brew)"},{"id":"go","kind":"go","module":"github.com/porteden/cli/cmd/porteden@latest","bins":["porteden"],"label":"Install porteden (go)"}]}}
 ---
 
 # porteden docs
@@ -42,6 +42,7 @@ If `porteden` is not installed: `brew install porteden/tap/porteden` (or `go ins
 - Share publicly: `porteden docs share google:DOCID --type anyone --role reader`
 - List permissions: `porteden docs permissions google:DOCID -jc`
 - Rename: `porteden docs rename google:DOCID --name "New Title"`
+- Copy (duplicate): `porteden docs copy google:DOCID --name "Working copy"` (optional `--folder google:0B7_FOLDER`)
 - Delete (trash): `porteden docs delete google:DOCID -y`
 
 ## Ops file format

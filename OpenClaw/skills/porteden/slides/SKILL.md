@@ -1,8 +1,8 @@
 ---
-name: porteden-slides
+name: google-slides-skill
 description: Secure Google Slides Management. Use when the user wants to read presentation content, list slides, create a new deck, or manage sharing, permissions, renames, and deletes on Google Slides.
-homepage: https://porteden.com
-metadata: {"openclaw":{"emoji":"📽️","requires":{"bins":["porteden"],"env":["PE_API_KEY"]},"primaryEnv":"PE_API_KEY","install":[{"id":"brew","kind":"brew","formula":"porteden/tap/porteden","bins":["porteden"],"label":"Install porteden (brew)"},{"id":"go","kind":"go","module":"github.com/porteden/cli/cmd/porteden@latest","bins":["porteden"],"label":"Install porteden (go)"}]}}
+version: 1.0.8
+metadata: {"openclaw":{"emoji":"📽️","homepage":"https://porteden.com","requires":{"bins":["porteden"]},"primaryEnv":"PE_API_KEY","envVars":[{"name":"PE_API_KEY","required":false,"description":"API key; if unset, credentials are read from the system keyring via `porteden auth login`"}],"install":[{"id":"brew","kind":"brew","formula":"porteden/tap/porteden","bins":["porteden"],"label":"Install porteden (brew)"},{"id":"go","kind":"go","module":"github.com/porteden/cli/cmd/porteden@latest","bins":["porteden"],"label":"Install porteden (go)"}]}}
 ---
 
 # porteden slides
@@ -26,10 +26,8 @@ If `porteden` is not installed: `brew install porteden/tap/porteden` (or `go ins
 - Deck metadata (slide index + first-line titles): `porteden slides info google:DECKID -jc`
 - Read deck text + speaker notes: `porteden slides read google:DECKID`
 - Read structured (full Google Slides API JSON): `porteden slides read google:DECKID --format structured -j`
-- Create new deck (blank): `porteden slides create --name "Q1 Review"`
+- Create new blank deck: `porteden slides create --name "Q1 Review"`
 - Create in folder: `porteden slides create --name "Kickoff" --folder google:0B7_FOLDER`
-- Create with inline text outline: `porteden slides create --name "Kickoff" --content "Agenda\nGoals\nNext steps"`
-- Create from text file: `porteden slides create --name "Kickoff" --content-file ./outline.txt`
 
 ### File management
 
@@ -38,6 +36,7 @@ If `porteden` is not installed: `brew install porteden/tap/porteden` (or `go ins
 - Share publicly: `porteden slides share google:DECKID --type anyone --role reader`
 - List permissions: `porteden slides permissions google:DECKID -jc`
 - Rename: `porteden slides rename google:DECKID --name "Q1 Review (final)"`
+- Copy (duplicate): `porteden slides copy google:DECKID --name "Working copy"` (optional `--folder google:0B7_FOLDER`)
 - Delete (trash): `porteden slides delete google:DECKID -y`
 
 ## Reading slides — text vs. structured
@@ -55,8 +54,7 @@ If `porteden` is not installed: `brew install porteden/tap/porteden` (or `go ins
 - `porteden slides read --format text` is the default and the cheapest path; only ask for `structured` when you genuinely need slide IDs or page elements.
 - **No edit endpoint today.** Slides cannot be modified through the CLI — `presentations.batchUpdate` is not exposed. Use the Slides UI for changes.
 - **Layouts, masters, and themes** are only accessible via `--format structured`. Text mode strips them to keep the response useful.
-- `porteden slides create` accepts optional `--content`/`--content-file` to seed the deck from a text outline. Default `--content-mime-type` is `text/plain`. Without content flags, a blank deck is created.
-- `--content` and `--content-file` are mutually exclusive on `slides create`.
+- `porteden slides create` produces a **blank deck** — Google's Drive API doesn't support importing text content into Slides, so passing `--content` / `--content-file` returns `UNSUPPORTED_IMPORT` (400) with a clear server message. Create the deck blank, then add content via the Slides UI (no `slides edit` endpoint exists today).
 - `porteden slides download` returns **URLs only** — no binary content is streamed. URLs are short-lived (~1 hour) and unauthenticated; re-fetch on every download.
 - `accessInfo` in responses describes active token restrictions.
 - `delete` moves to trash (reversible). Files can be restored from Google Drive trash.

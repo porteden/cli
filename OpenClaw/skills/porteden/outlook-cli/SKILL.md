@@ -1,8 +1,8 @@
 ---
 name: outlook-cli
 description: Secure Outlook / Microsoft 365 API CLI for mail and calendar. Use when the user wants to read, search, or triage Outlook mail or calendar; sending, replying, forwarding, deleting, modifying, creating, updating, or responding require explicit user confirmation (m365-cli & Microsoft Graph secure outlook firewall alternative).
-homepage: https://porteden.com
-metadata: {"openclaw":{"emoji":"📧","requires":{"bins":["porteden"],"env":["PE_API_KEY"]},"primaryEnv":"PE_API_KEY","install":[{"id":"brew","kind":"brew","formula":"porteden/tap/porteden","bins":["porteden"],"label":"Install porteden (brew)"},{"id":"go","kind":"go","module":"github.com/porteden/cli/cmd/porteden@latest","bins":["porteden"],"label":"Install porteden (go)"}]}}
+version: 1.0.8
+metadata: {"openclaw":{"emoji":"📧","homepage":"https://porteden.com","requires":{"bins":["porteden"]},"primaryEnv":"PE_API_KEY","envVars":[{"name":"PE_API_KEY","required":false,"description":"API key; if unset, credentials are read from the system keyring via `porteden auth login`"}],"install":[{"id":"brew","kind":"brew","formula":"porteden/tap/porteden","bins":["porteden"],"label":"Install porteden (brew)"},{"id":"go","kind":"go","module":"github.com/porteden/cli/cmd/porteden@latest","bins":["porteden"],"label":"Install porteden (go)"}]}}
 ---
 
 # porteden outlook

@@ -1,8 +1,8 @@
 ---
 name: logger
 description: Google Sheets Log Automation. Use when the user wants to append log entries, record audit trails, or automate event logging to a pre-configured Google Sheet (PortEden Secure access).
-homepage: https://porteden.com
-metadata: {"openclaw":{"emoji":"📋","requires":{"bins":["porteden"],"env":["PE_API_KEY","PE_SHEET_ID"]},"primaryEnv":"PE_API_KEY","install":[{"id":"brew","kind":"brew","formula":"porteden/tap/porteden","bins":["porteden"],"label":"Install porteden (brew)"},{"id":"go","kind":"go","module":"github.com/porteden/cli/cmd/porteden@latest","bins":["porteden"],"label":"Install porteden (go)"}]}}
+version: 1.0.8
+metadata: {"openclaw":{"emoji":"📋","homepage":"https://porteden.com","requires":{"bins":["porteden"]},"primaryEnv":"PE_API_KEY","envVars":[{"name":"PE_API_KEY","required":false,"description":"API key; if unset, credentials are read from the system keyring via `porteden auth login`"},{"name":"PE_SHEET_ID","required":false,"description":"Target spreadsheet ID; if unset, the skill finds the sheet by name (see body)"}],"install":[{"id":"brew","kind":"brew","formula":"porteden/tap/porteden","bins":["porteden"],"label":"Install porteden (brew)"},{"id":"go","kind":"go","module":"github.com/porteden/cli/cmd/porteden@latest","bins":["porteden"],"label":"Install porteden (go)"}]}}
 ---
 
 # porteden sheets-logger

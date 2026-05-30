@@ -1,8 +1,8 @@
 ---
-name: porteden-sheets-writer
-description: Automated Google Sheets Data Writer. Use when the user wants to append rows, update cells, or automate spreadsheet data pipelines against a pre-configured target sheet.
-homepage: https://porteden.com
-metadata: {"openclaw":{"emoji":"🤖","requires":{"bins":["porteden"],"env":["PE_API_KEY","PE_SHEET_ID"]},"primaryEnv":"PE_API_KEY","install":[{"id":"brew","kind":"brew","formula":"porteden/tap/porteden","bins":["porteden"],"label":"Install porteden (brew)"},{"id":"go","kind":"go","module":"github.com/porteden/cli/cmd/porteden@latest","bins":["porteden"],"label":"Install porteden (go)"}]}}
+name: sheets-writer
+description: Google Sheets Data Writer. Use when the user wants to append rows, update cells, or automate spreadsheet data pipelines against a pre-configured target sheet.
+version: 1.0.8
+metadata: {"openclaw":{"emoji":"🤖","homepage":"https://porteden.com","requires":{"bins":["porteden"]},"primaryEnv":"PE_API_KEY","envVars":[{"name":"PE_API_KEY","required":false,"description":"API key; if unset, credentials are read from the system keyring via `porteden auth login`"},{"name":"PE_SHEET_ID","required":false,"description":"Target spreadsheet ID; if unset, the skill finds the sheet by name (see body)"}],"install":[{"id":"brew","kind":"brew","formula":"porteden/tap/porteden","bins":["porteden"],"label":"Install porteden (brew)"},{"id":"go","kind":"go","module":"github.com/porteden/cli/cmd/porteden@latest","bins":["porteden"],"label":"Install porteden (go)"}]}}
 ---
 
 # porteden sheets-writer
@@ -97,6 +97,20 @@ Append adds rows **after the last row with data** in the target range. This is t
   ```bash
   porteden sheets write $PE_SHEET_ID --range "Sheet1!A1" --csv-file ./data.csv
   ```
+
+### Batch write (multiple ranges, one call)
+
+Use `--updates` to write several ranges in a **single atomic round-trip** (one Google write-quota unit) — the efficient path when building multi-tab workbooks. A bad range fails the whole batch (no partial writes). Up to 50 ranges / 50,000 cells. Mutually exclusive with `--range`/`--values`/`--csv`/`--csv-file`.
+
+```bash
+porteden sheets write $PE_SHEET_ID --updates '[{"range":"Summary!A1:B1","values":[["Metric","Value"]]},{"range":"Detail!A1:C2","values":[["a","b","c"],["d","e","f"]]}]'
+```
+
+To provision a new tab before writing to it (returns the new `sheetId`):
+
+```bash
+porteden sheets add-tab $PE_SHEET_ID --title "Q2 Forecast" --rows 200 --cols 12
+```
 
 ### Read for verification
 

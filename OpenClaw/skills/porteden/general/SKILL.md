@@ -1,8 +1,8 @@
 ---
 name: porteden
 description: Secure Calendar, Email, and Google Drive management - Gmail, Outlook & Exchange, Google Docs, Sheets & Slides. Use when the user wants to list, search, create, update, or delete calendar events, emails, or Drive/Docs/Sheets/Slides files across multiple accounts (gog-cli secure alternative).
-homepage: https://porteden.com
-metadata: {"openclaw":{"emoji":"🔗","requires":{"bins":["porteden"],"env":["PE_API_KEY"]},"primaryEnv":"PE_API_KEY","install":[{"id":"brew","kind":"brew","formula":"porteden/tap/porteden","bins":["porteden"],"label":"Install porteden (brew)"},{"id":"go","kind":"go","module":"github.com/porteden/cli/cmd/porteden@latest","bins":["porteden"],"label":"Install porteden (go)"}]}}
+version: 1.0.8
+metadata: {"openclaw":{"emoji":"🔗","homepage":"https://porteden.com","primaryEnv":"PE_API_KEY","envVars":[{"name":"PE_API_KEY","required":false,"description":"API key; if unset, credentials are read from the system keyring via `porteden auth login`"}],"requires":{"bins":["porteden"]},"install":[{"id":"brew","kind":"brew","formula":"porteden/tap/porteden","bins":["porteden"],"label":"Install porteden (brew)"},{"id":"go","kind":"go","module":"github.com/porteden/cli/cmd/porteden@latest","bins":["porteden"],"label":"Install porteden (go)"}]}}
 ---
 
 # porteden
@@ -118,8 +118,7 @@ Use `porteden sheets` for Google Sheets data operations and file management.
 
 Use `porteden slides` for Google Slides read operations and file management.
 
-- Create blank: `porteden slides create --name "Q1 Review"`
-- Create seeded from outline: `porteden slides create --name "Kickoff" --content-file ./outline.txt`
+- Create blank deck: `porteden slides create --name "Q1 Review"` (text content cannot be imported — Drive returns `UNSUPPORTED_IMPORT`; create blank and edit via the Slides UI)
 - Deck metadata (per-slide titles): `porteden slides info google:DECKID -jc`
 - Read deck text + speaker notes: `porteden slides read google:DECKID`
 - Read structured (full Slides API JSON): `porteden slides read google:DECKID --format structured -j`
