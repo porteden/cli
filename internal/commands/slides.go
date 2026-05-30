@@ -86,13 +86,17 @@ Examples:
 
 var slidesCreateCmd = &cobra.Command{
 	Use:   "create",
-	Short: "Create a new Google Slides deck, optionally seeded with text",
-	Long: `Creates a new Google Slides presentation. Pass --content (inline) or
---content-file to seed the first slide(s) from a text outline.
+	Short: "Create a new blank Google Slides deck",
+	Long: `Creates a new blank Google Slides presentation.
+
+Note: Google Drive does not support importing text content into Slides, so
+passing --content / --content-file returns an UNSUPPORTED_IMPORT (400) error
+from the server. The flags are kept for forward-compatibility but currently
+must be omitted. Create the deck blank, then add content via the Slides UI.
 
 Examples:
   porteden slides create --name "Q1 Review"
-  porteden slides create --name "Kickoff" --content-file ./outline.txt`,
+  porteden slides create --name "Kickoff" --folder google:0B7_FOLDER`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name, _ := cmd.Flags().GetString("name")
 		folder, _ := cmd.Flags().GetString("folder")
@@ -143,6 +147,24 @@ var slidesRenameCmd = &cobra.Command{
 			return err
 		}
 		return runRenameFile(client, args[0], cmd)
+	},
+}
+
+var slidesCopyCmd = &cobra.Command{
+	Use:   "copy <fileId>",
+	Short: "Duplicate a Google Slides deck",
+	Long: `Creates a copy of the presentation and returns the new file's id.
+
+Examples:
+  porteden slides copy google:DECKID --name "Working copy"
+  porteden slides copy google:DECKID --folder google:0B7_FOLDER`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		client, err := getClient(cmd)
+		if err != nil {
+			return err
+		}
+		return runCopyFile(client, args[0], cmd)
 	},
 }
 
@@ -222,11 +244,15 @@ func init() {
 	// share flags
 	addShareFlags(slidesShareCmd)
 
+	// copy flags
+	addCopyFlags(slidesCopyCmd)
+
 	// Register sub-commands
 	slidesCmd.AddCommand(slidesInfoCmd)
 	slidesCmd.AddCommand(slidesReadCmd)
 	slidesCmd.AddCommand(slidesCreateCmd)
 	slidesCmd.AddCommand(slidesRenameCmd)
+	slidesCmd.AddCommand(slidesCopyCmd)
 	slidesCmd.AddCommand(slidesDeleteCmd)
 	slidesCmd.AddCommand(slidesShareCmd)
 	slidesCmd.AddCommand(slidesPermissionsCmd)

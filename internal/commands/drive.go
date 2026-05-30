@@ -386,6 +386,27 @@ var driveMoveCmd = &cobra.Command{
 	},
 }
 
+// ==================== COPY ====================
+
+var driveCopyCmd = &cobra.Command{
+	Use:   "copy <fileId>",
+	Short: "Duplicate a file",
+	Long: `Creates a copy of a Drive file (Google Docs/Sheets/Slides included) and
+returns the new file's id. Folders cannot be copied.
+
+Examples:
+  porteden drive copy google:FILEID --name "Working copy"
+  porteden drive copy google:FILEID --folder google:0B7_DEST_FOLDER`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		client, err := getClient(cmd)
+		if err != nil {
+			return err
+		}
+		return runCopyFile(client, args[0], cmd)
+	},
+}
+
 // ==================== DELETE ====================
 
 var driveDeleteCmd = &cobra.Command{
@@ -522,6 +543,33 @@ func runRenameFile(client *api.Client, fileID string, cmd *cobra.Command) error 
 	return nil
 }
 
+// runCopyFile duplicates a Drive file. Shared by drive/sheets/docs/slides copy commands.
+func runCopyFile(client *api.Client, fileID string, cmd *cobra.Command) error {
+	name, _ := cmd.Flags().GetString("name")
+	folder, _ := cmd.Flags().GetString("folder")
+	req := api.CopyFileRequest{}
+	if name != "" {
+		req.Name = &name
+	}
+	if folder != "" {
+		req.ParentFolderID = &folder
+	}
+	result, err := client.CopyDriveFile(fileID, req)
+	if err != nil {
+		return formatError(err)
+	}
+	output.PrintWithOptions(result, getOutputFormat(cmd), output.PrintOptions{
+		Compact: IsCompactMode(),
+	})
+	return nil
+}
+
+// addCopyFlags registers the copy flags on a command (used by drive, sheets, docs, slides copy commands)
+func addCopyFlags(cmd *cobra.Command) {
+	cmd.Flags().String("name", "", `Name for the copy (omit for Google's "Copy of …" default)`)
+	cmd.Flags().String("folder", "", "Destination folder ID (provider-prefixed). Omit to copy into the source's folder.")
+}
+
 // addShareFlags registers the share flags on a command (used by drive, docs, sheets share commands)
 func addShareFlags(cmd *cobra.Command) {
 	cmd.Flags().String("type", "", "Share type: user, group, domain, anyone")
@@ -617,6 +665,9 @@ func init() {
 	// share flags
 	addShareFlags(driveShareCmd)
 
+	// copy flags
+	addCopyFlags(driveCopyCmd)
+
 	// Register sub-commands
 	driveCmd.AddCommand(driveFilesCmd)
 	driveCmd.AddCommand(driveFileCmd)
@@ -628,6 +679,7 @@ func init() {
 	driveCmd.AddCommand(driveMkdirCmd)
 	driveCmd.AddCommand(driveRenameCmd)
 	driveCmd.AddCommand(driveMoveCmd)
+	driveCmd.AddCommand(driveCopyCmd)
 	driveCmd.AddCommand(driveDeleteCmd)
 	driveCmd.AddCommand(driveShareCmd)
 }

@@ -451,6 +451,12 @@ type MoveFileRequest struct {
 	DestinationFolderID string `json:"destinationFolderId"`
 }
 
+// CopyFileRequest represents a request to duplicate a Drive file. Both fields optional.
+type CopyFileRequest struct {
+	Name           *string `json:"name,omitempty"`
+	ParentFolderID *string `json:"parentFolderId,omitempty"`
+}
+
 // ShareFileRequest represents a request to share a file
 type ShareFileRequest struct {
 	Type             string  `json:"type"`
@@ -541,11 +547,41 @@ type SheetValuesResponse struct {
 	AccessInfo *string         `json:"accessInfo,omitempty"`
 }
 
-// WriteSheetValuesRequest represents a request to write cell values
+// SheetRangeUpdate is one range/value pair in a batch write.
+type SheetRangeUpdate struct {
+	Range  string          `json:"range"`
+	Values [][]interface{} `json:"values"`
+}
+
+// WriteSheetValuesRequest represents a request to write cell values. Provide
+// either a single Range+Values, or a batch via Updates (the backend ignores
+// the top-level Range/Values when Updates is non-empty).
 type WriteSheetValuesRequest struct {
-	Range            string          `json:"range"`
-	Values           [][]interface{} `json:"values"`
-	ValueInputOption string          `json:"valueInputOption,omitempty"`
+	Range            string             `json:"range,omitempty"`
+	Values           [][]interface{}    `json:"values,omitempty"`
+	Updates          []SheetRangeUpdate `json:"updates,omitempty"`
+	ValueInputOption string             `json:"valueInputOption,omitempty"`
+}
+
+// AddSheetTabRequest represents a request to add a worksheet tab.
+type AddSheetTabRequest struct {
+	Title       string `json:"title"`
+	RowCount    *int   `json:"rowCount,omitempty"`
+	ColumnCount *int   `json:"columnCount,omitempty"`
+	Index       *int   `json:"index,omitempty"`
+}
+
+// AddSheetTabResponse is the response for creating a worksheet tab.
+type AddSheetTabResponse struct {
+	Success       bool    `json:"success"`
+	SpreadsheetID string  `json:"spreadsheetId"`
+	SheetID       int     `json:"sheetId"`
+	Title         string  `json:"title"`
+	RowCount      int     `json:"rowCount"`
+	ColumnCount   int     `json:"columnCount"`
+	ErrorCode     *string `json:"errorCode,omitempty"`
+	ErrorMessage  *string `json:"errorMessage,omitempty"`
+	AccessInfo    *string `json:"accessInfo,omitempty"`
 }
 
 // AppendSheetRowsRequest represents a request to append rows to a sheet

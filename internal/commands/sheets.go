@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"bufio"
 	"encoding/csv"
 	"encoding/json"
 	"errors"
@@ -9,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/porteden/cli/internal/api"
+	"github.com/porteden/cli/internal/auth"
 	"github.com/porteden/cli/internal/output"
 	"github.com/spf13/cobra"
 )
@@ -164,28 +166,28 @@ Provide values in one of three formats:
   --csv "Name,Score\nAlice,95"                 CSV string (\\n = newline)
   --csv-file ./data.csv                        CSV file path
 
+Or write multiple ranges atomically in one call with --updates (a JSON array of
+{"range","values"} objects; up to 50 ranges / 50,000 cells). --updates is
+mutually exclusive with --range/--values/--csv/--csv-file.
+
 Use --raw to send literal values without formula evaluation.
 
 Examples:
   porteden sheets write google:SHEETID --range "Sheet1!A1:B2" --values '[["Name","Score"],["Alice",95]]'
   porteden sheets write google:SHEETID --range "Sheet1!A1:B2" --csv "Name,Score\nAlice,95"
-  porteden sheets write google:SHEETID --range "Sheet1!A1" --csv-file ./data.csv`,
+  porteden sheets write google:SHEETID --range "Sheet1!A1" --csv-file ./data.csv
+  porteden sheets write google:SHEETID --updates '[{"range":"Summary!A1:B1","values":[["Metric","Value"]]},{"range":"Detail!A1","values":[["x"]]}]'`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		rangeStr, _ := cmd.Flags().GetString("range")
-		if rangeStr == "" {
-			return errors.New("--range is required (e.g., Sheet1!A1:C3)")
-		}
-
-		values, err := parseSheetValues(cmd)
-		if err != nil {
-			return err
-		}
-
 		rawMode, _ := cmd.Flags().GetBool("raw")
 		inputOption := "USER_ENTERED"
 		if rawMode {
 			inputOption = "RAW"
+		}
+
+		req, err := buildWriteRequest(cmd, inputOption)
+		if err != nil {
+			return err
 		}
 
 		client, err := getClient(cmd)
@@ -193,11 +195,7 @@ Examples:
 			return err
 		}
 
-		result, err := client.WriteSheetValues(args[0], api.WriteSheetValuesRequest{
-			Range:            rangeStr,
-			Values:           values,
-			ValueInputOption: inputOption,
-		})
+		result, err := client.WriteSheetValues(args[0], req)
 		if err != nil {
 			return formatError(err)
 		}
@@ -253,6 +251,146 @@ Examples:
 		output.PrintWithOptions(result, getOutputFormat(cmd), output.PrintOptions{
 			Compact: IsCompactMode(),
 		})
+		return nil
+	},
+}
+
+// ==================== TAB MANAGEMENT ====================
+
+var sheetsReadTabCmd = &cobra.Command{
+	Use:   "read-tab <fileId>",
+	Short: "Read the entire used range of one tab",
+	Long: `Reads a single tab's whole used range in one call — no A1 range to compute.
+Identify the tab by --title (primary) or --sheet-id. Provide exactly one.
+
+Examples:
+  porteden sheets read-tab google:SHEETID --title "Q2 Forecast" -jc
+  porteden sheets read-tab google:SHEETID --sheet-id 0 -jc`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		title, _ := cmd.Flags().GetString("title")
+		hasSheetID := cmd.Flags().Changed("sheet-id")
+
+		if hasSheetID == (title != "") {
+			return errors.New("provide exactly one of --title or --sheet-id")
+		}
+
+		var sheetID *int
+		if hasSheetID {
+			id, _ := cmd.Flags().GetInt("sheet-id")
+			sheetID = &id
+		}
+
+		client, err := getClient(cmd)
+		if err != nil {
+			return err
+		}
+
+		result, err := client.ReadSheetTab(args[0], title, sheetID)
+		if err != nil {
+			return formatError(err)
+		}
+
+		output.PrintWithOptions(result, getOutputFormat(cmd), output.PrintOptions{
+			Compact: IsCompactMode(),
+		})
+		return nil
+	},
+}
+
+var sheetsAddTabCmd = &cobra.Command{
+	Use:   "add-tab <fileId>",
+	Short: "Add a new tab (worksheet) to a spreadsheet",
+	Long: `Adds a new tab and returns its assigned sheetId. The title must be unique
+within the spreadsheet. --rows/--cols/--index are optional (Google defaults apply).
+
+Examples:
+  porteden sheets add-tab google:SHEETID --title "Q2 Forecast"
+  porteden sheets add-tab google:SHEETID --title "Q2 Forecast" --rows 200 --cols 12 --index 2`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		title, _ := cmd.Flags().GetString("title")
+		if title == "" {
+			return errors.New("--title is required")
+		}
+
+		req := api.AddSheetTabRequest{Title: title}
+		if cmd.Flags().Changed("rows") {
+			n, _ := cmd.Flags().GetInt("rows")
+			req.RowCount = &n
+		}
+		if cmd.Flags().Changed("cols") {
+			n, _ := cmd.Flags().GetInt("cols")
+			req.ColumnCount = &n
+		}
+		if cmd.Flags().Changed("index") {
+			n, _ := cmd.Flags().GetInt("index")
+			req.Index = &n
+		}
+
+		client, err := getClient(cmd)
+		if err != nil {
+			return err
+		}
+
+		result, err := client.AddSheetTab(args[0], req)
+		if err != nil {
+			return formatError(err)
+		}
+
+		output.PrintWithOptions(result, getOutputFormat(cmd), output.PrintOptions{
+			Compact: IsCompactMode(),
+		})
+		return nil
+	},
+}
+
+var sheetsDeleteTabCmd = &cobra.Command{
+	Use:   "delete-tab <fileId>",
+	Short: "Delete one tab from a spreadsheet",
+	Long: `Deletes one tab, identified by --sheet-id (primary) or --title. Provide
+exactly one. A spreadsheet must retain at least one tab.
+
+Examples:
+  porteden sheets delete-tab google:SHEETID --title "Q2 Forecast" -y
+  porteden sheets delete-tab google:SHEETID --sheet-id 1843502915 -y`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		title, _ := cmd.Flags().GetString("title")
+		hasSheetID := cmd.Flags().Changed("sheet-id")
+
+		if hasSheetID == (title != "") {
+			return errors.New("provide exactly one of --title or --sheet-id")
+		}
+
+		var sheetID *int
+		target := title
+		if hasSheetID {
+			id, _ := cmd.Flags().GetInt("sheet-id")
+			sheetID = &id
+			target = fmt.Sprintf("sheetId %d", id)
+		}
+
+		yes, _ := cmd.Flags().GetBool("yes")
+		if !yes && auth.IsInteractiveTerminal() {
+			fmt.Printf("Delete tab %q from %s? [y/N]: ", target, args[0])
+			line, _ := bufio.NewReader(os.Stdin).ReadString('\n')
+			choice := strings.TrimSpace(strings.ToLower(line))
+			if choice != "y" && choice != "yes" {
+				fmt.Println("Cancelled.")
+				return nil
+			}
+		}
+
+		client, err := getClient(cmd)
+		if err != nil {
+			return err
+		}
+
+		if err := client.DeleteSheetTab(args[0], sheetID, title); err != nil {
+			return formatError(err)
+		}
+		fmt.Printf("Deleted tab %q from %s\n", target, args[0])
 		return nil
 	},
 }
@@ -388,7 +526,71 @@ No binary content is streamed — the response contains URLs only.`,
 	},
 }
 
+var sheetsCopyCmd = &cobra.Command{
+	Use:   "copy <fileId>",
+	Short: "Duplicate a Google Sheet",
+	Long: `Creates a copy of the spreadsheet and returns the new file's id.
+
+Examples:
+  porteden sheets copy google:SHEETID --name "Q2 Forecast (copy)"
+  porteden sheets copy google:SHEETID --folder google:0B7_FOLDER`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		client, err := getClient(cmd)
+		if err != nil {
+			return err
+		}
+		return runCopyFile(client, args[0], cmd)
+	},
+}
+
 // ==================== HELPERS ====================
+
+// buildWriteRequest assembles a WriteSheetValuesRequest from either --updates
+// (batch mode) or the single-range --range + values flags. The two are mutually
+// exclusive.
+func buildWriteRequest(cmd *cobra.Command, inputOption string) (api.WriteSheetValuesRequest, error) {
+	updatesJSON, _ := cmd.Flags().GetString("updates")
+
+	if updatesJSON != "" {
+		rangeStr, _ := cmd.Flags().GetString("range")
+		valuesJSON, _ := cmd.Flags().GetString("values")
+		csvStr, _ := cmd.Flags().GetString("csv")
+		csvFile, _ := cmd.Flags().GetString("csv-file")
+		if rangeStr != "" || valuesJSON != "" || csvStr != "" || csvFile != "" {
+			return api.WriteSheetValuesRequest{}, errors.New("--updates is mutually exclusive with --range/--values/--csv/--csv-file")
+		}
+
+		var updates []api.SheetRangeUpdate
+		if err := json.Unmarshal([]byte(updatesJSON), &updates); err != nil {
+			return api.WriteSheetValuesRequest{}, fmt.Errorf("invalid --updates JSON: %w", err)
+		}
+		if len(updates) == 0 {
+			return api.WriteSheetValuesRequest{}, errors.New("--updates must contain at least one range update")
+		}
+
+		return api.WriteSheetValuesRequest{
+			Updates:          updates,
+			ValueInputOption: inputOption,
+		}, nil
+	}
+
+	rangeStr, _ := cmd.Flags().GetString("range")
+	if rangeStr == "" {
+		return api.WriteSheetValuesRequest{}, errors.New("--range is required (e.g., Sheet1!A1:C3), or use --updates for a batch write")
+	}
+
+	values, err := parseSheetValues(cmd)
+	if err != nil {
+		return api.WriteSheetValuesRequest{}, err
+	}
+
+	return api.WriteSheetValuesRequest{
+		Range:            rangeStr,
+		Values:           values,
+		ValueInputOption: inputOption,
+	}, nil
+}
 
 // parseSheetValues extracts a 2D [][]interface{} from --values, --csv, or --csv-file flags.
 // Exactly one of the three must be provided.
@@ -472,7 +674,23 @@ func init() {
 	sheetsWriteCmd.Flags().String("values", "", `Values as JSON 2D array (e.g., '[["Name","Score"],["Alice",95]]')`)
 	sheetsWriteCmd.Flags().String("csv", "", `Values as CSV string (use \\n for row separator)`)
 	sheetsWriteCmd.Flags().String("csv-file", "", "Path to a CSV file")
+	sheetsWriteCmd.Flags().String("updates", "", `Batch: JSON array of {"range","values"} objects (mutually exclusive with --range/--values/--csv/--csv-file)`)
 	sheetsWriteCmd.Flags().Bool("raw", false, "Use RAW input mode (disables formula evaluation)")
+
+	// read-tab flags
+	sheetsReadTabCmd.Flags().String("title", "", "Tab title (e.g., Q2 Forecast)")
+	sheetsReadTabCmd.Flags().Int("sheet-id", 0, "Numeric sheetId of the tab")
+
+	// add-tab flags
+	sheetsAddTabCmd.Flags().String("title", "", "Tab title (required, unique within the spreadsheet)")
+	sheetsAddTabCmd.Flags().Int("rows", 0, "Initial grid row count (Google default 1000)")
+	sheetsAddTabCmd.Flags().Int("cols", 0, "Initial grid column count (Google default 26)")
+	sheetsAddTabCmd.Flags().Int("index", 0, "Zero-based position among existing tabs (default: append)")
+
+	// delete-tab flags
+	sheetsDeleteTabCmd.Flags().String("title", "", "Tab title to delete")
+	sheetsDeleteTabCmd.Flags().Int("sheet-id", 0, "Numeric sheetId of the tab to delete")
+	sheetsDeleteTabCmd.Flags().BoolP("yes", "y", false, "Skip confirmation prompt")
 
 	// append flags
 	sheetsAppendCmd.Flags().String("range", "", `Range to detect the table (e.g., Sheet1!A:C or Sheet1)`)
@@ -490,16 +708,23 @@ func init() {
 	// share flags
 	addShareFlags(sheetsShareCmd)
 
+	// copy flags
+	addCopyFlags(sheetsCopyCmd)
+
 	// Register sub-commands
 	sheetsCmd.AddCommand(sheetsCreateCmd)
 	sheetsCmd.AddCommand(sheetsInfoCmd)
 	sheetsCmd.AddCommand(sheetsContentCmd)
 	sheetsCmd.AddCommand(sheetsReadCmd)
+	sheetsCmd.AddCommand(sheetsReadTabCmd)
 	sheetsCmd.AddCommand(sheetsWriteCmd)
 	sheetsCmd.AddCommand(sheetsAppendCmd)
+	sheetsCmd.AddCommand(sheetsAddTabCmd)
+	sheetsCmd.AddCommand(sheetsDeleteTabCmd)
 	sheetsCmd.AddCommand(sheetsRenameCmd)
 	sheetsCmd.AddCommand(sheetsDeleteCmd)
 	sheetsCmd.AddCommand(sheetsShareCmd)
 	sheetsCmd.AddCommand(sheetsPermissionsCmd)
 	sheetsCmd.AddCommand(sheetsDownloadCmd)
+	sheetsCmd.AddCommand(sheetsCopyCmd)
 }

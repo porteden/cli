@@ -224,6 +224,24 @@ var docsRenameCmd = &cobra.Command{
 	},
 }
 
+var docsCopyCmd = &cobra.Command{
+	Use:   "copy <fileId>",
+	Short: "Duplicate a Google Doc",
+	Long: `Creates a copy of the document and returns the new file's id.
+
+Examples:
+  porteden docs copy google:DOCID --name "Working copy"
+  porteden docs copy google:DOCID --folder google:0B7_FOLDER`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		client, err := getClient(cmd)
+		if err != nil {
+			return err
+		}
+		return runCopyFile(client, args[0], cmd)
+	},
+}
+
 var docsDeleteCmd = &cobra.Command{
 	Use:   "delete <fileId>",
 	Short: "Move a Google Doc to trash",
@@ -313,11 +331,15 @@ func init() {
 	// share flags
 	addShareFlags(docsShareCmd)
 
+	// copy flags
+	addCopyFlags(docsCopyCmd)
+
 	// Register sub-commands
 	docsCmd.AddCommand(docsCreateCmd)
 	docsCmd.AddCommand(docsReadCmd)
 	docsCmd.AddCommand(docsEditCmd)
 	docsCmd.AddCommand(docsRenameCmd)
+	docsCmd.AddCommand(docsCopyCmd)
 	docsCmd.AddCommand(docsDeleteCmd)
 	docsCmd.AddCommand(docsShareCmd)
 	docsCmd.AddCommand(docsPermissionsCmd)

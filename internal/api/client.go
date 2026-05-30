@@ -847,6 +847,22 @@ func (c *Client) DeleteDriveFile(fileID string) error {
 	return err
 }
 
+// CopyDriveFile duplicates a Drive file, returning the new file's id.
+func (c *Client) CopyDriveFile(fileID string, req CopyFileRequest) (*DriveOperationResult, error) {
+	path := driveBase + "/files/" + url.PathEscape(fileID) + "/copy"
+	respBody, err := c.Post(path, req)
+	if err != nil {
+		return nil, err
+	}
+
+	var result DriveOperationResult
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return &result, nil
+}
+
 // ShareDriveFile shares a file with a user, group, domain, or anyone
 func (c *Client) ShareDriveFile(fileID string, req ShareFileRequest) (*DriveOperationResult, error) {
 	path := driveBase + "/files/" + url.PathEscape(fileID) + "/share"
@@ -973,6 +989,61 @@ func (c *Client) AppendSheetRows(fileID string, req AppendSheetRowsRequest) (*Dr
 	}
 
 	return &result, nil
+}
+
+// ReadSheetTab reads the entire used range of one tab, identified by numeric
+// sheetID (preferred when set) or title.
+func (c *Client) ReadSheetTab(fileID, title string, sheetID *int) (*SheetValuesResponse, error) {
+	v := url.Values{}
+	if sheetID != nil {
+		v.Set("sheetId", strconv.Itoa(*sheetID))
+	} else {
+		v.Set("title", title)
+	}
+
+	path := driveBase + "/sheets/" + url.PathEscape(fileID) + "/tabs/values?" + v.Encode()
+	body, err := c.Get(path)
+	if err != nil {
+		return nil, err
+	}
+
+	var response SheetValuesResponse
+	if err := json.Unmarshal(body, &response); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return &response, nil
+}
+
+// AddSheetTab adds a worksheet tab and returns its assigned sheetId.
+func (c *Client) AddSheetTab(fileID string, req AddSheetTabRequest) (*AddSheetTabResponse, error) {
+	path := driveBase + "/sheets/" + url.PathEscape(fileID) + "/tabs"
+	respBody, err := c.Post(path, req)
+	if err != nil {
+		return nil, err
+	}
+
+	var result AddSheetTabResponse
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return &result, nil
+}
+
+// DeleteSheetTab deletes one tab, identified by numeric sheetID (preferred when
+// set) or title. The endpoint returns 204 with no body.
+func (c *Client) DeleteSheetTab(fileID string, sheetID *int, title string) error {
+	v := url.Values{}
+	if sheetID != nil {
+		v.Set("sheetId", strconv.Itoa(*sheetID))
+	} else {
+		v.Set("title", title)
+	}
+
+	path := driveBase + "/sheets/" + url.PathEscape(fileID) + "/tabs?" + v.Encode()
+	_, err := c.Delete(path)
+	return err
 }
 
 // GetSheetBulkContent reads every tab of a spreadsheet in one upstream call.
