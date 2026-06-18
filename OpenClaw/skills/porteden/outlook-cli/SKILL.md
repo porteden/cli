@@ -1,6 +1,6 @@
 ---
 name: outlook-cli
-description: Secure Outlook / Microsoft 365 API CLI for mail and calendar. Use when the user wants to read, search, or triage Outlook mail or calendar; sending, replying, forwarding, deleting, modifying, creating, updating, or responding require explicit user confirmation (m365-cli & Microsoft Graph secure outlook firewall alternative).
+description: Outlook / Microsoft 365 Secure API CLI for mail and calendar. Use when the user wants to read, search, or triage Outlook mail or calendar; sending, replying, forwarding, deleting, modifying, creating, updating, or responding require explicit user confirmation (m365-cli & Microsoft Graph secure outlook firewall alternative).
 version: 1.0.8
 metadata: {"openclaw":{"emoji":"📧","homepage":"https://porteden.com","requires":{"bins":["porteden"]},"primaryEnv":"PE_API_KEY","envVars":[{"name":"PE_API_KEY","required":false,"description":"API key; if unset, credentials are read from the system keyring via `porteden auth login`"}],"install":[{"id":"brew","kind":"brew","formula":"porteden/tap/porteden","bins":["porteden"],"label":"Install porteden (brew)"},{"id":"go","kind":"go","module":"github.com/porteden/cli/cmd/porteden@latest","bins":["porteden"],"label":"Install porteden (go)"}]}}
 ---
@@ -35,7 +35,7 @@ If `porteden` is not installed: `brew install porteden/tap/porteden` (or `go ins
 - Get conversation: `porteden email thread <threadId> -jc`
 - Send message: `porteden email send --to user@example.com --subject "Hi" --body "Hello"` (also: --cc, --bcc, --body-file, --body-type text, --importance high)
 - Send with named recipient: `porteden email send --to "John Doe <john@example.com>" --subject "Hi" --body "Hello"`
-- Reply: `porteden email reply <emailId> --body "Thanks"` (add `--reply-all` for reply all)
+- Reply: `porteden email reply <emailId> --body "Thanks"` (add `--reply-all` for reply all; add `--cc`/`--to`/`--bcc` to loop someone new into the thread while staying in-reply — additive to the derived recipients)
 - Forward: `porteden email forward <emailId> --to colleague@example.com` (optional `--body "FYI"`, --cc)
 - Modify categories / read state: `porteden email modify <emailId> --mark-read` (also: --mark-unread, --add-labels Important, --remove-labels Inbox)
 - Delete message: `porteden email delete <emailId>`

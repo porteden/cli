@@ -59,7 +59,7 @@ Use `porteden email` (alias: `porteden mail`) for email management.
 - Get thread: `porteden email thread <threadId> -jc`
 - Send email: `porteden email send --to user@example.com --subject "Hi" --body "Hello"` (also: --cc, --bcc, --body-file, --body-type text, --importance high)
 - Send with named recipient: `porteden email send --to "John Doe <john@example.com>" --subject "Hi" --body "Hello"`
-- Reply: `porteden email reply <emailId> --body "Thanks"` (add `--reply-all` for reply all)
+- Reply: `porteden email reply <emailId> --body "Thanks"` (add `--reply-all` for reply all; add `--cc`/`--to`/`--bcc` to loop someone new into the thread while staying in-reply — additive to the derived recipients)
 - Forward: `porteden email forward <emailId> --to colleague@example.com` (optional `--body "FYI"`, --cc)
 - Modify email: `porteden email modify <emailId> --mark-read` (also: --mark-unread, --add-labels IMPORTANT, --remove-labels INBOX)
 - Delete email: `porteden email delete <emailId>`

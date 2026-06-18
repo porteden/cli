@@ -37,7 +37,7 @@ If `porteden` is not installed: `brew install porteden/tap/porteden` (or `go ins
 - Send message: `porteden email send --to user@example.com --subject "Hi" --body "Hello"` (also: --cc, --bcc, --body-file, --body-type text, --importance high)
 - Send with named recipient: `porteden email send --to "John Doe <john@example.com>" --subject "Hi" --body "Hello"`
 - Send from a specific Gmail mailbox (multi-mailbox accounts): `porteden email send --send-from you@gmail.com --to user@example.com --subject "Hi" --body "Hello"` (alternative: `--connection-id <int>`). Required when more than one mailbox is connected; omitting it picks the first active mailbox, which is rarely what the user expects.
-- Reply: `porteden email reply <emailId> --body "Thanks"` (add `--reply-all` for reply all). Reply always uses the mailbox that received the original — no `--send-from` available here.
+- Reply: `porteden email reply <emailId> --body "Thanks"` (add `--reply-all` for reply all; add `--cc`/`--to`/`--bcc` to loop someone new into the thread while staying in-reply — additive to the derived recipients). Reply always uses the mailbox that received the original — no `--send-from` available here.
 - Forward: `porteden email forward <emailId> --to colleague@example.com` (optional `--body "FYI"`, --cc)
 - Modify labels / read state: `porteden email modify <emailId> --mark-read` (also: --mark-unread, --add-labels IMPORTANT, --remove-labels INBOX)
 - Delete message: `porteden email delete <emailId>`
