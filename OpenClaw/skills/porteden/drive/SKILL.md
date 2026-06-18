@@ -1,5 +1,5 @@
 ---
-name: google-drive-secured
+name: google-drive-secure
 description: Google Drive Secure Management. Use when the user wants to list, search, read text content, create files with inline content, upload binaries, create folders, rename, move, copy, share, or manage permissions on Google Drive files (porteden secure alternative).
 version: 1.0.8
 metadata: {"openclaw":{"emoji":"📂","homepage":"https://porteden.com","requires":{"bins":["porteden"]},"primaryEnv":"PE_API_KEY","envVars":[{"name":"PE_API_KEY","required":false,"description":"API key; if unset, credentials are read from the system keyring via `porteden auth login`"}],"install":[{"id":"brew","kind":"brew","formula":"porteden/tap/porteden","bins":["porteden"],"label":"Install porteden (brew)"},{"id":"go","kind":"go","module":"github.com/porteden/cli/cmd/porteden@latest","bins":["porteden"],"label":"Install porteden (go)"}]}}
@@ -43,6 +43,17 @@ If `porteden` is not installed: `brew install porteden/tap/porteden` (or `go ins
   - Binary files return a `webViewLink` — open in browser
   - Spreadsheets/presentations are steered to: `porteden sheets content` / `porteden slides read`
 
+### Working with spreadsheets
+
+For anything beyond a quick text dump of a Google Sheet, use the dedicated `porteden sheets` commands (see the **porteden-sheets** skill) — `drive content` only reads:
+
+- Read all tabs / specific ranges: `porteden sheets content google:SHEETID -jc` / `--ranges "Summary!A1:C100"`
+- Read one tab in full: `porteden sheets read-tab google:SHEETID --title "Q2 Forecast" -jc`
+- Write / append cells: `porteden sheets write google:SHEETID --range "Sheet1!A1:B2" --values '[["Name","Score"]]'` / `porteden sheets append`
+- Batch write multiple ranges atomically: `porteden sheets write google:SHEETID --updates '[{"range":"Summary!A1:B1","values":[["Metric","Value"]]}]'`
+- Manage tabs: `porteden sheets add-tab` / `delete-tab` / metadata via `porteden sheets info google:SHEETID -jc`
+- Create a spreadsheet (optionally CSV-seeded): `porteden sheets create --name "Q1 Budget" --csv-file ./sales.csv`
+
 ### Create & upload
 
 - Create file with inline content: `porteden drive create --name "Notes.md" --mime-type text/markdown --content "# Notes"`
@@ -71,7 +82,6 @@ If `porteden` is not installed: `brew install porteden/tap/porteden` (or `go ins
 - `-jc` is shorthand for `--json --compact`: strips noise, limits fields, reduces tokens for AI agents.
 - **File IDs are always provider-prefixed** (e.g., `google:1BxiMVs0XRA5...`). Pass them as-is.
 - `porteden drive files --all` auto-paginates (safety cap: 50 pages). Check `hasMore` in JSON output.
-- `porteden drive download` returns **URLs only** — no binary content is streamed.
 - `porteden drive content` is the **universal text reader** — use it instead of `download` when you need the textual content of a file. For Google Workspace types (Sheets, Slides) it steers to the dedicated commands (`porteden sheets content`, `porteden slides read`) via stderr hints.
 - `porteden drive create` uses **inline JSON** (UTF-8 text only, ≤ 10 MB). For binary content use `porteden drive upload`. For Workspace target MIME types (`application/vnd.google-apps.{document,spreadsheet,presentation}`) Drive auto-imports the content; otherwise the file is stored as-is.
 - `porteden drive copy` duplicates any Drive file — **including Google Docs/Sheets/Slides** (per-type wrappers `docs copy` / `sheets copy` / `slides copy` exist too). Both `--name` and `--folder` are optional (defaults: Google's "Copy of …" name, source's folder). Copy is **not idempotent** — calling twice creates two copies. **Folders cannot be copied** (returns `PROVIDER_ERROR`); SharePoint files aren't supported yet (`NOT_SUPPORTED`). Requires the `copy_file` permission on the token.
