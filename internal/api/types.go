@@ -304,11 +304,17 @@ type SendEmailRequest struct {
 	SendFrom     string        `json:"sendFrom,omitempty"`
 }
 
-// ReplyEmailRequest represents a request to reply to an email
+// ReplyEmailRequest represents a request to reply to an email.
+// To/CC/BCC are additive: they loop in recipients who were not on the
+// original message, on top of the recipients derived server-side from the
+// source thread (the sender, plus the thread's to/cc when ReplyAll is true).
 type ReplyEmailRequest struct {
-	Body     string `json:"body"`
-	BodyType string `json:"bodyType,omitempty"`
-	ReplyAll bool   `json:"replyAll,omitempty"`
+	Body     string        `json:"body"`
+	BodyType string        `json:"bodyType,omitempty"`
+	ReplyAll bool          `json:"replyAll,omitempty"`
+	To       []Participant `json:"to,omitempty"`
+	CC       []Participant `json:"cc,omitempty"`
+	BCC      []Participant `json:"bcc,omitempty"`
 }
 
 // ForwardEmailRequest represents a request to forward an email

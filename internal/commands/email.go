@@ -151,9 +151,15 @@ var replyEmailCmd = &cobra.Command{
 	Short: "Reply to an email",
 	Long: `Reply to an existing email.
 
+The reply is always sent from the mailbox that received the original message.
+Use --to/--cc/--bcc to loop in people who were not on the original thread while
+keeping the reply in-thread; they are added on top of the recipients derived
+from the source message.
+
 Examples:
   porteden email reply <emailId> --body "Thanks for the update"
-  porteden email reply <emailId> --body-file reply.txt --reply-all`,
+  porteden email reply <emailId> --body-file reply.txt --reply-all
+  porteden email reply <emailId> --body "Looping in Tammy" --cc "Tammy <tammy@example.com>"`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		emailID := args[0]
@@ -325,6 +331,9 @@ func init() {
 	replyEmailCmd.Flags().String("body-file", "", "Read body from file")
 	replyEmailCmd.Flags().String("body-type", "html", "Body type: html or text")
 	replyEmailCmd.Flags().Bool("reply-all", false, "Reply to all recipients")
+	replyEmailCmd.Flags().StringSlice("to", nil, "Additional To recipients to add to the thread (email or Name <email> format)")
+	replyEmailCmd.Flags().StringSlice("cc", nil, "Additional CC recipients to add to the thread")
+	replyEmailCmd.Flags().StringSlice("bcc", nil, "Additional BCC recipients to add to the thread")
 
 	// Forward command flags
 	forwardEmailCmd.Flags().StringSlice("to", nil, "Forward recipients")
@@ -501,6 +510,21 @@ func buildReplyRequest(cmd *cobra.Command) (api.ReplyEmailRequest, error) {
 	req.Body = body
 	req.BodyType, _ = cmd.Flags().GetString("body-type")
 	req.ReplyAll, _ = cmd.Flags().GetBool("reply-all")
+
+	toList, _ := cmd.Flags().GetStringSlice("to")
+	for _, recipient := range toList {
+		req.To = append(req.To, parseParticipant(recipient))
+	}
+
+	ccList, _ := cmd.Flags().GetStringSlice("cc")
+	for _, recipient := range ccList {
+		req.CC = append(req.CC, parseParticipant(recipient))
+	}
+
+	bccList, _ := cmd.Flags().GetStringSlice("bcc")
+	for _, recipient := range bccList {
+		req.BCC = append(req.BCC, parseParticipant(recipient))
+	}
 
 	return req, nil
 }
