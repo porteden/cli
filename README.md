@@ -1,6 +1,9 @@
 # PortEden CLI (`porteden`)
 
-Command-line interface for PortEden calendar firewall.
+Command-line interface for the PortEden data firewall — calendar, email,
+Google Drive (Docs, Sheets, Slides), and task management (Monday, Asana,
+Jira, Linear, Notion) from your terminal, gated by your PortEden access
+token's permissions.
 
 ## Installation
 
@@ -68,6 +71,7 @@ sudo mv porteden /usr/local/bin/
 ```bash
 # Store API key directly (no browser required)
 porteden auth login --token pe_abc123...
+```
 
 ### Browser-Based Login
 
@@ -183,6 +187,15 @@ porteden calendar create \
   --from "2026-03-01T00:00:00Z" \
   --to "2026-03-02T00:00:00Z" \
   --all-day
+
+# Focus-time block, no invitations sent
+porteden calendar create \
+  --calendar 1 \
+  --summary "Deep work" \
+  --from "2026-02-10T09:00:00Z" \
+  --to "2026-02-10T11:00:00Z" \
+  --event-type focus-time \
+  --no-notify
 ```
 
 ### Update Event
@@ -222,7 +235,17 @@ porteden calendar delete <eventId> --no-notify
 porteden calendar respond <eventId> accepted
 porteden calendar respond <eventId> declined
 porteden calendar respond <eventId> tentative
+
+# With a comment for the organizer
+porteden calendar respond <eventId> declined --comment "Conflict, sorry"
+
+# Without notifying the organizer
+porteden calendar respond <eventId> tentative --no-notify
 ```
+
+Organizers can't RSVP to their own events, and the responding mailbox
+must be on the attendee list — both return a deterministic 409 that
+retrying won't fix.
 
 ### Free/Busy
 
@@ -309,7 +332,14 @@ porteden email messages --week --all
 
 # Manual pagination (limit per page)
 porteden email messages --limit 10
+
+# Resume from a cursor (nextPageToken from a previous JSON response)
+porteden email messages --limit 50 --page-token "eyJjdXJzb3IiOi..."
 ```
+
+Email pagination is cursor-based: drive iteration by
+`hasMoreEmailsInNextResultPage` + `nextPageToken` in JSON output — there
+is no total count.
 
 ### Get Single Email
 
@@ -405,6 +435,34 @@ porteden email modify <emailId> --remove-labels INBOX
 
 # Combine modifications
 porteden email modify <emailId> --mark-read --add-labels IMPORTANT
+```
+
+## Drive, Docs, Sheets, Slides & Tasks
+
+The same token-gated model covers Google Drive and task management.
+Each group has full `--help`; a few representative commands:
+
+```bash
+# Drive files (IDs are provider-prefixed, e.g. google:1BxiMVs0...)
+porteden drive files -q "budget" -jc
+porteden drive content google:FILEID           # read text content in one call
+porteden drive upload --file ./report.pdf --name "Q1 Report.pdf"
+
+# Google Docs
+porteden docs read google:DOCID
+porteden docs edit google:DOCID --find "old" --replace "new"
+
+# Google Sheets
+porteden sheets content google:SHEETID -jc     # bulk-read all tabs
+porteden sheets append google:SHEETID --range "Sheet1!A:C" --csv "Alice,95"
+
+# Google Slides
+porteden slides read google:DECKID
+
+# Tasks (Monday, Asana, Jira Cloud, Linear, Notion)
+porteden tasks providers -jc
+porteden tasks boards --provider NOTION -jc
+porteden notion items <boardId> -q "dark mode" -jc
 ```
 
 ## Output Formats
@@ -530,11 +588,8 @@ PortEden is available as an [OpenClaw](https://openclaw.com) skill for AI-optimi
 | `PE_TIMEZONE` | Output timezone for display |
 | `PE_FORMAT` | Default output format (`json`, `table`, `plain`) |
 | `PE_API_URL` | API base URL (for development) |
-| `PE_VERBOSE` | Enable verbose output (`1` or `true`) |
-| `PE_COLOR` | Color mode: `auto`, `always`, `never` |
 | `NO_COLOR` | Disable colors (standard) |
 | `FORCE_COLOR` | Force colors even in non-TTY |
-| `CI` | Allow insecure file-based credential storage |
 
 ### Flag Precedence
 
@@ -649,7 +704,7 @@ export PE_API_KEY="${PORTEDEN_API_KEY}"
 porteden calendar events --days 7 --json > events.json
 
 # Process the events
-jq '.data[] | select(.summary | contains("deploy"))' events.json
+jq '.events[] | select(.title | contains("deploy"))' events.json
 ```
 
 ## Contributing

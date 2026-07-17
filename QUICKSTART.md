@@ -236,7 +236,7 @@ porteden calendar events --today -j
 Great for piping to `jq`:
 
 ```bash
-porteden calendar events --today --json | jq '.data[] | .summary'
+porteden calendar events --today --json | jq '.events[] | .title'
 ```
 
 ### Plain Text (TSV)
@@ -273,9 +273,6 @@ export PE_FORMAT=json
 
 # Set output timezone
 export PE_TIMEZONE=America/New_York
-
-# Enable verbose logging
-export PE_VERBOSE=1
 
 # Disable colors
 export NO_COLOR=1
@@ -330,6 +327,8 @@ Just wait a moment and try again.
 
 - Explore all calendar commands: `porteden calendar --help`
 - Explore all email commands: `porteden email --help`
+- Explore Drive, Docs, Sheets, Slides: `porteden drive --help` (and `docs`, `sheets`, `slides`)
+- Explore task management: `porteden tasks --help` (Monday, Asana, Jira, Linear, Notion)
 - Set up shell completions: `porteden completion --help`
 - Check out advanced features in [README.md](README.md)
 
