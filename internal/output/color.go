@@ -53,8 +53,11 @@ func supportsColor() bool {
 		if os.Getenv("ConEmuANSI") == "ON" {
 			return true
 		}
-		// Default: assume modern Windows 10+ with VT support
-		return true
+		// Classic conhost (cmd.exe / PowerShell 5.1) only interprets ANSI once
+		// the console has virtual-terminal processing enabled — otherwise the
+		// escape sequences print as literal garbage. Enable it and only claim
+		// color support when that succeeds.
+		return enableVirtualTerminalProcessing()
 	}
 
 	// Unix-like systems generally support colors in terminals
@@ -64,6 +67,13 @@ func supportsColor() bool {
 // SetColorEnabled allows overriding color detection
 func SetColorEnabled(enabled bool) {
 	colorsEnabled = enabled
+}
+
+// StdoutIsTerminal reports whether stdout is an interactive terminal (i.e. not
+// redirected to a file or pipe). Callers use it to decide whether interactive
+// UI (prompts, wizards) is appropriate without clobbering machine-readable output.
+func StdoutIsTerminal() bool {
+	return term.IsTerminal(int(os.Stdout.Fd()))
 }
 
 // Colorize wraps text with color codes if colors are enabled

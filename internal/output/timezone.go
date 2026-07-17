@@ -4,6 +4,11 @@ import (
 	"os"
 	"time"
 
+	// Embed the IANA timezone database. Windows has no system zoneinfo source,
+	// so without this time.LoadLocation fails and PE_TIMEZONE would be silently
+	// ignored there (falling back to time.Local). Costs ~450 KB in the binary.
+	_ "time/tzdata"
+
 	"github.com/porteden/cli/internal/debug"
 )
 
