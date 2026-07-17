@@ -55,9 +55,9 @@ func CompactEvent(event *api.Event, opts CompactOptions) *api.Event {
 }
 
 func compactEvent(event api.Event, opts CompactOptions) api.Event {
-	// Truncate description if too long
-	if opts.MaxDescriptionLength > 0 && len(event.Description) > opts.MaxDescriptionLength {
-		event.Description = event.Description[:opts.MaxDescriptionLength-3] + "..."
+	// Truncate description if too long (rune-safe: this feeds JSON output)
+	if opts.MaxDescriptionLength > 0 {
+		event.Description = truncateRunesSafe(event.Description, opts.MaxDescriptionLength)
 	}
 
 	// Filter invalid attendees
@@ -149,12 +149,9 @@ func CompactEmail(email *api.Email, opts CompactOptions) *api.Email {
 }
 
 func compactEmailMsg(email api.Email, opts CompactOptions) api.Email {
-	if opts.MaxDescriptionLength > 0 && len(email.BodyPreview) > opts.MaxDescriptionLength {
-		email.BodyPreview = email.BodyPreview[:opts.MaxDescriptionLength-3] + "..."
-	}
-
-	if opts.MaxDescriptionLength > 0 && len(email.Body) > opts.MaxDescriptionLength*2 {
-		email.Body = email.Body[:opts.MaxDescriptionLength*2-3] + "..."
+	if opts.MaxDescriptionLength > 0 {
+		email.BodyPreview = truncateRunesSafe(email.BodyPreview, opts.MaxDescriptionLength)
+		email.Body = truncateRunesSafe(email.Body, opts.MaxDescriptionLength*2)
 	}
 
 	// Strip attachment details in compact mode (keep HasAttachments flag)
@@ -184,9 +181,9 @@ func CompactDriveFilesResponse(resp *api.DriveFilesResponse, opts CompactOptions
 
 	for i, f := range resp.Files {
 		cf := f
-		// Truncate name
-		if cf.Name != nil && len(*cf.Name) > 40 {
-			s := (*cf.Name)[:37] + "..."
+		// Truncate name (rune-safe)
+		if cf.Name != nil {
+			s := truncateRunesSafe(*cf.Name, 40)
 			cf.Name = &s
 		}
 		// First owner only
@@ -253,8 +250,8 @@ const (
 // Structural fields (ID, GroupID, GroupName) are never touched — they're the
 // caller's only way to address the item once other fields are masked.
 func compactTaskItem(item api.TaskItemDto, opts CompactOptions) api.TaskItemDto {
-	if item.Description != nil && opts.MaxDescriptionLength > 0 && len(*item.Description) > opts.MaxDescriptionLength {
-		s := (*item.Description)[:opts.MaxDescriptionLength-3] + "..."
+	if item.Description != nil && opts.MaxDescriptionLength > 0 {
+		s := truncateRunesSafe(*item.Description, opts.MaxDescriptionLength)
 		item.Description = &s
 	}
 	if len(item.Assignees) > taskMaxAssignees {
@@ -372,8 +369,8 @@ func CompactTaskBlockListResponse(resp *api.TaskBlockListResponse, opts CompactO
 	}
 	blocks := make([]api.TaskBlockDto, len(resp.Blocks))
 	for i, b := range resp.Blocks {
-		if b.Text != nil && opts.MaxDescriptionLength > 0 && len(*b.Text) > opts.MaxDescriptionLength {
-			s := (*b.Text)[:opts.MaxDescriptionLength-3] + "..."
+		if b.Text != nil && opts.MaxDescriptionLength > 0 {
+			s := truncateRunesSafe(*b.Text, opts.MaxDescriptionLength)
 			b.Text = &s
 		}
 		// Drop richText (HTML) in compact mode — the plain text suffices.

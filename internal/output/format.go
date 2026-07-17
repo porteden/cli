@@ -116,10 +116,16 @@ func printPlain(data interface{}) {
 	case *api.FreeBusyResponse:
 		for _, cal := range v.Calendars {
 			for _, b := range cal.Busy {
-				fmt.Printf("%d\t%s\t%s\t%s\t%dm\n",
+				fmt.Printf("%d\t%s\tbusy\t%s\t%s\t%dm\n",
 					cal.CalendarID, cal.CalendarName,
 					FormatLocalTime(b.StartUtc), FormatLocalTime(b.EndUtc),
 					b.DurationMinutes)
+			}
+			for _, f := range cal.Free {
+				fmt.Printf("%d\t%s\tfree\t%s\t%s\t%dm\n",
+					cal.CalendarID, cal.CalendarName,
+					FormatLocalTime(f.StartUtc), FormatLocalTime(f.EndUtc),
+					f.DurationMinutes)
 			}
 		}
 	case *api.DeleteEventResponse:
@@ -249,6 +255,9 @@ func printTable(data interface{}) {
 	// Handle wrapped API responses
 	case *api.EventsResponse:
 		printEventsTable(w, v.Events, v.Meta)
+		if v.CurrentUserCalendarEmail != "" {
+			fmt.Fprintf(w, "\nYou: %s\n", v.CurrentUserCalendarEmail)
+		}
 		if v.AccessInfo != "" {
 			fmt.Fprintf(w, "\nAccess: %s\n", v.AccessInfo)
 		}
@@ -266,6 +275,9 @@ func printTable(data interface{}) {
 		printEventDetail(w, *v)
 	case *api.SingleEventResponse:
 		printEventDetail(w, v.Event)
+		if v.CurrentUserCalendarEmail != "" {
+			fmt.Fprintf(w, "You:\t%s\n", v.CurrentUserCalendarEmail)
+		}
 		if v.AccessInfo != "" {
 			fmt.Fprintf(w, "\nAccess:\t%s\n", v.AccessInfo)
 		}
@@ -424,6 +436,9 @@ func printEventDetail(w *tabwriter.Writer, e api.Event) {
 	if e.JoinUrl != "" {
 		fmt.Fprintf(w, "Join URL:\t%s\n", e.JoinUrl)
 	}
+	if e.Provider != "" {
+		fmt.Fprintf(w, "Provider:\t%s\n", e.Provider)
+	}
 	if len(e.Attendees) > 0 {
 		fmt.Fprintln(w, "Attendees:")
 		for _, a := range e.Attendees {
@@ -461,13 +476,19 @@ func printCalendarsTable(w *tabwriter.Writer, calendars []api.Calendar) {
 func printFreeBusyTable(w *tabwriter.Writer, resp *api.FreeBusyResponse) {
 	for _, cal := range resp.Calendars {
 		fmt.Fprintf(w, "Calendar: %s (ID: %d)\n", cal.CalendarName, cal.CalendarID)
-		fmt.Fprintln(w, "  START\tEND\tDURATION")
-		fmt.Fprintln(w, "  ─────\t───\t────────")
+		fmt.Fprintln(w, "  \tSTART\tEND\tDURATION")
+		fmt.Fprintln(w, "  \t─────\t───\t────────")
 		for _, b := range cal.Busy {
-			fmt.Fprintf(w, "  %s\t%s\t%dm\n",
+			fmt.Fprintf(w, "  busy\t%s\t%s\t%dm\n",
 				FormatLocalTime(b.StartUtc),
 				FormatLocalTime(b.EndUtc),
 				b.DurationMinutes)
+		}
+		for _, f := range cal.Free {
+			fmt.Fprintf(w, "  free\t%s\t%s\t%dm\n",
+				FormatLocalTime(f.StartUtc),
+				FormatLocalTime(f.EndUtc),
+				f.DurationMinutes)
 		}
 		fmt.Fprintln(w)
 	}
@@ -520,11 +541,23 @@ func printCalendarsPlain(calendars []api.Calendar) {
 	}
 }
 
+// truncate bounds a cell value to max display characters, counting runes (not
+// bytes) so multi-byte UTF-8 is never split mid-sequence, and strips control
+// characters so untrusted API data can't break table alignment or inject
+// terminal escapes. Used for nearly every table/plain cell.
 func truncate(s string, max int) string {
-	if len(s) <= max {
+	s = stripControl(s)
+	if max <= 0 {
+		return ""
+	}
+	runes := []rune(s)
+	if len(runes) <= max {
 		return s
 	}
-	return s[:max-3] + "..."
+	if max <= 3 {
+		return string(runes[:max])
+	}
+	return string(runes[:max-3]) + "..."
 }
 
 // ==================== EMAIL FORMATTERS ====================
@@ -578,7 +611,7 @@ func printEmailDetail(w *tabwriter.Writer, e api.Email) {
 	if e.ThreadID != "" {
 		fmt.Fprintf(w, "Thread:\t%s\n", e.ThreadID)
 	}
-	fmt.Fprintf(w, "Subject:\t%s\n", e.Subject)
+	fmt.Fprintf(w, "Subject:\t%s\n", stripControl(e.Subject))
 
 	if e.From != nil {
 		fmt.Fprintf(w, "From:\t%s\n", formatParticipant(*e.From))
@@ -628,9 +661,9 @@ func printEmailDetail(w *tabwriter.Writer, e api.Email) {
 	}
 
 	if e.Body != "" {
-		fmt.Fprintf(w, "\n%s\n", e.Body)
+		fmt.Fprintf(w, "\n%s\n", sanitizeText(e.Body))
 	} else if e.BodyPreview != "" {
-		fmt.Fprintf(w, "\n%s\n", e.BodyPreview)
+		fmt.Fprintf(w, "\n%s\n", sanitizeText(e.BodyPreview))
 	}
 }
 
@@ -704,7 +737,7 @@ func printEmailsPlain(emails []api.Email) {
 
 func printEmailPlain(e api.Email) {
 	fmt.Printf("ID: %s\n", e.ID)
-	fmt.Printf("Subject: %s\n", e.Subject)
+	fmt.Printf("Subject: %s\n", stripControl(e.Subject))
 	if e.From != nil {
 		fmt.Printf("From: %s\n", e.From.Email)
 	}
@@ -717,9 +750,9 @@ func printEmailPlain(e api.Email) {
 		fmt.Printf("Account: %s\n", e.EmailAccountOwner)
 	}
 	if e.Body != "" {
-		fmt.Printf("\n%s\n", e.Body)
+		fmt.Printf("\n%s\n", sanitizeText(e.Body))
 	} else if e.BodyPreview != "" {
-		fmt.Printf("\n%s\n", e.BodyPreview)
+		fmt.Printf("\n%s\n", sanitizeText(e.BodyPreview))
 	}
 }
 
@@ -1024,7 +1057,7 @@ func printSheetValuesTable(w *tabwriter.Writer, v *api.SheetValuesResponse) {
 		if i > 0 {
 			fmt.Fprint(w, "\t")
 		}
-		fmt.Fprintf(w, "%v", cell)
+		fmt.Fprint(w, formatCell(cell))
 	}
 	fmt.Fprintln(w)
 	for i := 0; i < maxCols; i++ {
@@ -1042,7 +1075,7 @@ func printSheetValuesTable(w *tabwriter.Writer, v *api.SheetValuesResponse) {
 				fmt.Fprint(w, "\t")
 			}
 			if i < len(row) {
-				fmt.Fprintf(w, "%v", row[i])
+				fmt.Fprint(w, formatCell(row[i]))
 			}
 		}
 		fmt.Fprintln(w)
@@ -1057,7 +1090,7 @@ func printSheetValuesPlain(v *api.SheetValuesResponse) {
 	for _, row := range v.Values {
 		cells := make([]string, len(row))
 		for i, cell := range row {
-			cells[i] = fmt.Sprintf("%v", cell)
+			cells[i] = formatCell(cell)
 		}
 		fmt.Println(strings.Join(cells, "\t"))
 	}
@@ -1171,7 +1204,7 @@ func printSheetBulkContentPlain(v *api.SheetBulkContentResponse) {
 		for _, row := range tab.Values {
 			cells := make([]string, len(row))
 			for i, c := range row {
-				cells[i] = fmt.Sprintf("%v", c)
+				cells[i] = formatCell(c)
 			}
 			fmt.Println(strings.Join(cells, "\t"))
 		}
@@ -1199,7 +1232,7 @@ func printValuesGrid(w *tabwriter.Writer, values [][]interface{}) {
 		if i > 0 {
 			fmt.Fprint(w, "\t")
 		}
-		fmt.Fprintf(w, "%v", cell)
+		fmt.Fprint(w, formatCell(cell))
 	}
 	fmt.Fprintln(w)
 	for i := 0; i < maxCols; i++ {
@@ -1215,7 +1248,7 @@ func printValuesGrid(w *tabwriter.Writer, values [][]interface{}) {
 				fmt.Fprint(w, "\t")
 			}
 			if i < len(row) {
-				fmt.Fprintf(w, "%v", row[i])
+				fmt.Fprint(w, formatCell(row[i]))
 			}
 		}
 		fmt.Fprintln(w)

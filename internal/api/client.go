@@ -164,7 +164,9 @@ func (c *Client) GetEvents(params EventParams) (*EventsResponse, error) {
 	if !params.To.IsZero() {
 		v.Set("to", params.To.Format(time.RFC3339))
 	}
-	v.Set("limit", strconv.Itoa(params.Limit))
+	if params.Limit > 0 {
+		v.Set("limit", strconv.Itoa(params.Limit))
+	}
 	if params.CalendarID > 0 {
 		v.Set("calendarId", strconv.FormatInt(params.CalendarID, 10))
 	}
@@ -260,10 +262,11 @@ func (c *Client) DeleteEvent(eventID string, notifyAttendees bool) (*DeleteEvent
 	return &response, nil
 }
 
-// RespondToEvent responds to an event invitation
-func (c *Client) RespondToEvent(eventID, status string) (*Event, error) {
+// RespondToEvent responds to an event invitation (accept/decline/tentative,
+// with an optional comment and organizer-notification toggle)
+func (c *Client) RespondToEvent(eventID string, req EventRespondRequest) (*Event, error) {
 	path := "/api/access/calendar/events/" + url.PathEscape(eventID) + "/respond"
-	body, err := c.Post(path, map[string]string{"status": status})
+	body, err := c.Post(path, req)
 	if err != nil {
 		return nil, err
 	}
@@ -309,7 +312,9 @@ func (c *Client) GetEventsByContact(params EventsByContactParams) (*EventsRespon
 	if params.Name != "" {
 		v.Set("name", params.Name)
 	}
-	v.Set("limit", strconv.Itoa(params.Limit))
+	if params.Limit > 0 {
+		v.Set("limit", strconv.Itoa(params.Limit))
+	}
 	if params.Offset > 0 {
 		v.Set("offset", strconv.Itoa(params.Offset))
 	}
@@ -1122,14 +1127,21 @@ func (c *Client) GetSlidesContent(fileID, format string) (*SlidesContentResponse
 	return &response, nil
 }
 
-// GetAllEvents fetches all events by auto-paginating through results
+// GetAllEvents fetches all events by auto-paginating through results.
+// Bounded by a page cap and a zero-progress guard: the firewall filters
+// pages server-side, so a page can legitimately come back with Count==0
+// while HasMore stays true — without the guard, offset would never advance
+// and the loop would hammer the API (and the user's monthly quota) forever.
 func (c *Client) GetAllEvents(params EventParams) (*EventsResponse, error) {
 	var allEvents []Event
 	offset := 0
 	var accessInfo string
 	var calEmail string
+	var requestID string
+	finalMeta := &Meta{}
+	const maxPages = 100
 
-	for {
+	for page := 0; page < maxPages; page++ {
 		params.Offset = offset
 		resp, err := c.GetEvents(params)
 		if err != nil {
@@ -1139,29 +1151,31 @@ func (c *Client) GetAllEvents(params EventParams) (*EventsResponse, error) {
 		allEvents = append(allEvents, resp.Events...)
 		accessInfo = resp.AccessInfo
 		calEmail = resp.CurrentUserCalendarEmail
+		requestID = resp.RequestID
+		if resp.Meta != nil {
+			finalMeta.From = resp.Meta.From
+			finalMeta.To = resp.Meta.To
+			finalMeta.Timestamp = resp.Meta.Timestamp
+		}
 
-		if resp.Meta == nil || !resp.Meta.HasMore {
-			// Build final response with aggregated data
-			finalMeta := &Meta{
-				Count:      len(allEvents),
-				TotalCount: len(allEvents),
-			}
-			if resp.Meta != nil {
-				finalMeta.From = resp.Meta.From
-				finalMeta.To = resp.Meta.To
-				finalMeta.Timestamp = resp.Meta.Timestamp
-			}
-			return &EventsResponse{
-				RequestID:                resp.RequestID,
-				Events:                   allEvents,
-				Meta:                     finalMeta,
-				AccessInfo:               accessInfo,
-				CurrentUserCalendarEmail: calEmail,
-			}, nil
+		// Stop on last page, or on a HasMore=true page that made no forward
+		// progress (Count<=0 would leave offset stuck and loop forever).
+		if resp.Meta == nil || !resp.Meta.HasMore || resp.Meta.Count <= 0 {
+			break
 		}
 
 		offset += resp.Meta.Count
 	}
+
+	finalMeta.Count = len(allEvents)
+	finalMeta.TotalCount = len(allEvents)
+	return &EventsResponse{
+		RequestID:                requestID,
+		Events:                   allEvents,
+		Meta:                     finalMeta,
+		AccessInfo:               accessInfo,
+		CurrentUserCalendarEmail: calEmail,
+	}, nil
 }
 
 // ==================== TASKS METHODS ====================

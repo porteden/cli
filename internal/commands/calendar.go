@@ -126,6 +126,8 @@ var createCmd = &cobra.Command{
 		attendees, _ := cmd.Flags().GetStringSlice("attendees")
 		allDay, _ := cmd.Flags().GetBool("all-day")
 		recurrence, _ := cmd.Flags().GetStringSlice("recurrence")
+		eventType, _ := cmd.Flags().GetString("event-type")
+		noNotify, _ := cmd.Flags().GetBool("no-notify")
 
 		// Parse times
 		startTime, err := time.Parse(time.RFC3339, fromStr)
@@ -148,6 +150,11 @@ var createCmd = &cobra.Command{
 			IsAllDay:    allDay,
 			Attendees:   attendees,
 			Recurrence:  recurrence,
+			EventType:   eventType,
+		}
+		if noNotify {
+			f := false
+			req.SendNotifications = &f
 		}
 
 		event, err := client.CreateEvent(req)
@@ -155,7 +162,12 @@ var createCmd = &cobra.Command{
 			return formatError(err)
 		}
 
-		fmt.Printf("Event created successfully (ID: %s)\n", event.ID)
+		// Keep the human status line out of machine-readable output — writing
+		// it to stdout ahead of the JSON/TSV payload makes the whole stream
+		// unparseable for `--json`/`--plain` consumers.
+		if getOutputFormat(cmd) == output.FormatTable {
+			fmt.Printf("Event created successfully (ID: %s)\n", event.ID)
+		}
 		output.PrintWithOptions(event, getOutputFormat(cmd), output.PrintOptions{
 			Compact: IsCompactMode(),
 		})
@@ -228,7 +240,9 @@ Examples:
 			return formatError(err)
 		}
 
-		fmt.Printf("Event updated successfully (ID: %s)\n", event.ID)
+		if getOutputFormat(cmd) == output.FormatTable {
+			fmt.Printf("Event updated successfully (ID: %s)\n", event.ID)
+		}
 		output.PrintWithOptions(event, getOutputFormat(cmd), output.PrintOptions{
 			Compact: IsCompactMode(),
 		})
@@ -271,11 +285,20 @@ var respondCmd = &cobra.Command{
 	Long: `Respond to an event invitation with one of:
   - accepted
   - declined
-  - tentative`,
+  - tentative
+
+Organizers cannot RSVP to their own events (409 CANNOT_RSVP_AS_ORGANIZER),
+and the responding mailbox must be on the attendee list (409 NOT_AN_ATTENDEE).
+Both are precondition failures — retrying won't help.
+
+Examples:
+  porteden calendar respond <eventId> accepted
+  porteden calendar respond <eventId> declined --comment "Conflict, sorry" --no-notify`,
 	Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		eventID := args[0]
-		status := args[1]
+		// Status is case-insensitive on the API; normalize for local validation.
+		status := strings.ToLower(args[1])
 
 		// Validate status
 		validStatuses := map[string]bool{
@@ -292,12 +315,23 @@ var respondCmd = &cobra.Command{
 			return err
 		}
 
-		event, err := client.RespondToEvent(eventID, status)
+		req := api.EventRespondRequest{Status: status}
+		if comment, _ := cmd.Flags().GetString("comment"); comment != "" {
+			req.Comment = comment
+		}
+		if noNotify, _ := cmd.Flags().GetBool("no-notify"); noNotify {
+			f := false
+			req.SendNotification = &f
+		}
+
+		event, err := client.RespondToEvent(eventID, req)
 		if err != nil {
 			return formatError(err)
 		}
 
-		fmt.Printf("Response recorded: %s\n", status)
+		if getOutputFormat(cmd) == output.FormatTable {
+			fmt.Printf("Response recorded: %s\n", status)
+		}
 		output.PrintWithOptions(event, getOutputFormat(cmd), output.PrintOptions{
 			Compact: IsCompactMode(),
 		})
@@ -357,7 +391,7 @@ Email and name parameters support partial matching (case-insensitive).
 Examples:
   porteden calendar by-contact user@example.com
   porteden calendar by-contact --name "John"
-  porteden calendar by-contact --name "Smith" --email "@acme.com"`,
+  porteden calendar by-contact "@acme.com" --name "Smith"`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		contactEmail := ""
@@ -406,14 +440,20 @@ Examples:
 	},
 }
 
-// getAllEventsByContact fetches all events by contact by auto-paginating
+// getAllEventsByContact fetches all events by contact by auto-paginating.
+// Bounded by a page cap and a zero-progress guard, matching GetAllEvents:
+// a firewall-trimmed page can report Count==0 with HasMore==true, which
+// would otherwise leave offset stuck and loop against the API forever.
 func getAllEventsByContact(client *api.Client, params api.EventsByContactParams) (*api.EventsResponse, error) {
 	var allEvents []api.Event
 	offset := 0
 	var accessInfo string
 	var calEmail string
+	var requestID string
+	finalMeta := &api.Meta{}
+	const maxPages = 100
 
-	for {
+	for page := 0; page < maxPages; page++ {
 		params.Offset = offset
 		resp, err := client.GetEventsByContact(params)
 		if err != nil {
@@ -423,28 +463,29 @@ func getAllEventsByContact(client *api.Client, params api.EventsByContactParams)
 		allEvents = append(allEvents, resp.Events...)
 		accessInfo = resp.AccessInfo
 		calEmail = resp.CurrentUserCalendarEmail
+		requestID = resp.RequestID
+		if resp.Meta != nil {
+			finalMeta.From = resp.Meta.From
+			finalMeta.To = resp.Meta.To
+			finalMeta.Timestamp = resp.Meta.Timestamp
+		}
 
-		if resp.Meta == nil || !resp.Meta.HasMore {
-			finalMeta := &api.Meta{
-				Count:      len(allEvents),
-				TotalCount: len(allEvents),
-			}
-			if resp.Meta != nil {
-				finalMeta.From = resp.Meta.From
-				finalMeta.To = resp.Meta.To
-				finalMeta.Timestamp = resp.Meta.Timestamp
-			}
-			return &api.EventsResponse{
-				RequestID:                resp.RequestID,
-				Events:                   allEvents,
-				Meta:                     finalMeta,
-				AccessInfo:               accessInfo,
-				CurrentUserCalendarEmail: calEmail,
-			}, nil
+		if resp.Meta == nil || !resp.Meta.HasMore || resp.Meta.Count <= 0 {
+			break
 		}
 
 		offset += resp.Meta.Count
 	}
+
+	finalMeta.Count = len(allEvents)
+	finalMeta.TotalCount = len(allEvents)
+	return &api.EventsResponse{
+		RequestID:                requestID,
+		Events:                   allEvents,
+		Meta:                     finalMeta,
+		AccessInfo:               accessInfo,
+		CurrentUserCalendarEmail: calEmail,
+	}, nil
 }
 
 func init() {
@@ -486,6 +527,8 @@ func init() {
 	createCmd.Flags().StringSlice("attendees", nil, "Attendee emails")
 	createCmd.Flags().Bool("all-day", false, "Create all-day event")
 	createCmd.Flags().StringSlice("recurrence", nil, "RRULE recurrence patterns")
+	createCmd.Flags().String("event-type", "", "Event type: default, focus-time, out-of-office, working-location")
+	createCmd.Flags().Bool("no-notify", false, "Don't send invitations to attendees")
 	_ = createCmd.MarkFlagRequired("calendar")
 	_ = createCmd.MarkFlagRequired("summary")
 	_ = createCmd.MarkFlagRequired("from")
@@ -504,6 +547,10 @@ func init() {
 
 	// Delete flags
 	deleteCmd.Flags().Bool("no-notify", false, "Don't send cancellation notifications")
+
+	// Respond flags
+	respondCmd.Flags().String("comment", "", "Optional message sent with the response")
+	respondCmd.Flags().Bool("no-notify", false, "Don't notify the organizer")
 
 	calendarCmd.AddCommand(calendarsCmd)
 	calendarCmd.AddCommand(eventsCmd)
@@ -525,8 +572,12 @@ func getClient(cmd *cobra.Command) (*api.Client, error) {
 		return api.NewClient(apiKey), nil
 	}
 
-	// Non-interactive: return plain error
-	if !auth.IsInteractiveTerminal() {
+	// Return a plain error (no wizard) unless we're truly interactive AND the
+	// output is human-facing. Launching the banner+prompt wizard when the
+	// caller asked for --json/--plain, or piped stdout, would corrupt the
+	// output stream — and the empty-input-defaults-to-Yes prompt could even
+	// start a browser login inside a scripted invocation.
+	if !auth.IsInteractiveTerminal() || !output.StdoutIsTerminal() || getOutputFormat(cmd) != output.FormatTable {
 		return nil, fmt.Errorf("not authenticated. Run 'porteden auth login' to authenticate")
 	}
 

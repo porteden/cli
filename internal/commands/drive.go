@@ -611,6 +611,9 @@ func buildDriveListParams(cmd *cobra.Command) api.DriveListParams {
 	if limit, _ := cmd.Flags().GetInt("limit"); limit > 0 {
 		params.Limit = limit
 	}
+	if pageToken, _ := cmd.Flags().GetString("page-token"); pageToken != "" {
+		params.PageToken = pageToken
+	}
 	if orderBy, _ := cmd.Flags().GetString("order-by"); orderBy != "" {
 		params.OrderBy = orderBy
 	}
@@ -630,6 +633,7 @@ func init() {
 	driveFilesCmd.Flags().String("modified-before", "", "Files modified before date (ISO 8601)")
 	driveFilesCmd.Flags().Int("limit", 25, "Results per page (1-100)")
 	driveFilesCmd.Flags().Bool("all", false, "Auto-paginate to fetch all results")
+	driveFilesCmd.Flags().String("page-token", "", "Opaque cursor from a previous response's nextPageToken")
 	driveFilesCmd.Flags().String("order-by", "modified_time", "Sort field: name, modified_time, created_time, size")
 
 	// upload flags

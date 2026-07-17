@@ -300,6 +300,7 @@ func init() {
 	messagesCmd.Flags().Int("limit", 20, "Maximum emails to return (1-50)")
 	messagesCmd.Flags().Bool("include-body", false, "Include full email body in results")
 	messagesCmd.Flags().Bool("all", false, "Fetch all pages")
+	messagesCmd.Flags().String("page-token", "", "Opaque cursor from a previous response's nextPageToken")
 
 	// Time filters for messages
 	messagesCmd.Flags().Bool("today", false, "Show today's emails")
@@ -397,6 +398,10 @@ func buildEmailParams(cmd *cobra.Command) (api.EmailParams, error) {
 
 	if includeBody, _ := cmd.Flags().GetBool("include-body"); includeBody {
 		params.IncludeBody = true
+	}
+
+	if pageToken, _ := cmd.Flags().GetString("page-token"); pageToken != "" {
+		params.PageToken = pageToken
 	}
 
 	// Parse time range

@@ -179,7 +179,7 @@ func TestRespondToEvent_NotFound(t *testing.T) {
 	client := getTestClient(t)
 
 	// Test with a non-existent event ID - should return an error
-	_, err := client.RespondToEvent("999999", "accepted")
+	_, err := client.RespondToEvent("999999", EventRespondRequest{Status: "accepted"})
 	if err == nil {
 		t.Fatal("Expected error for non-existent event, got nil")
 	}

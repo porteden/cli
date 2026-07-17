@@ -33,6 +33,7 @@ func (t *FlexTime) UnmarshalJSON(b []byte) error {
 // Meta contains response metadata
 type Meta struct {
 	Count       int      `json:"count,omitempty"`
+	Limit       int      `json:"limit,omitempty"`
 	Offset      int      `json:"offset,omitempty"`
 	HasMore     bool     `json:"hasMore,omitempty"`
 	TotalCount  int      `json:"totalCount,omitempty"`
@@ -95,6 +96,7 @@ type Event struct {
 	JoinUrl          string     `json:"joinUrl,omitempty"`
 	Labels           []string   `json:"labels,omitempty"`
 	IsRecurringEvent bool       `json:"isRecurringEvent,omitempty"`
+	Provider         string     `json:"provider,omitempty"` // "GOOGLE" or "M365"
 }
 
 // Attendee represents an event attendee
@@ -142,6 +144,10 @@ type CreateEventRequest struct {
 	IsAllDay    bool      `json:"isAllDay,omitempty"`
 	Attendees   []string  `json:"attendees,omitempty"`
 	Recurrence  []string  `json:"recurrence,omitempty"`
+	// EventType: default, focus-time, out-of-office, working-location
+	// (provider-specific support).
+	EventType         string `json:"eventType,omitempty"`
+	SendNotifications *bool  `json:"sendNotifications,omitempty"` // default true server-side
 }
 
 // UpdateEventRequest represents a request to update an event (PATCH)
@@ -176,6 +182,7 @@ type FreeBusyCalendar struct {
 	CalendarID   int64        `json:"calendarId"`
 	CalendarName string       `json:"calendarName"`
 	Busy         []BusyPeriod `json:"busy"`
+	Free         []BusyPeriod `json:"free"`
 }
 
 // BusyPeriod represents a single busy time block
@@ -190,6 +197,14 @@ type FreeBusyParams struct {
 	From      time.Time
 	To        time.Time
 	Calendars string // comma-separated calendar IDs
+}
+
+// EventRespondRequest is the POST /events/{id}/respond body.
+// Status is required (accepted, declined, tentative — case-insensitive on input).
+type EventRespondRequest struct {
+	Status           string `json:"status"`
+	Comment          string `json:"comment,omitempty"`
+	SendNotification *bool  `json:"sendNotification,omitempty"` // default true server-side
 }
 
 // DeleteEventResponse is the response from deleting an event
