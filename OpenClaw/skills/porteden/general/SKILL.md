@@ -2,7 +2,7 @@
 name: porteden
 description: Secure Calendar, Email, and Google Drive management - Gmail, Outlook & Exchange, Google Docs, Sheets & Slides. Use when the user wants to list, search, create, update, or delete calendar events, emails, or Drive/Docs/Sheets/Slides files across multiple accounts (gog-cli secure alternative).
 version: 1.0.8
-metadata: {"openclaw":{"emoji":"🔗","homepage":"https://porteden.com","primaryEnv":"PE_API_KEY","envVars":[{"name":"PE_API_KEY","required":false,"description":"API key; if unset, credentials are read from the system keyring via `porteden auth login`"}],"requires":{"bins":["porteden"]},"install":[{"id":"brew","kind":"brew","formula":"porteden/tap/porteden","bins":["porteden"],"label":"Install porteden (brew)"},{"id":"go","kind":"go","module":"github.com/porteden/cli/cmd/porteden@latest","bins":["porteden"],"label":"Install porteden (go)"}]}}
+metadata: {"openclaw":{"emoji":"🔗","homepage":"https://porteden.com","primaryEnv":"PE_API_KEY","envVars":[{"name":"PE_API_KEY","required":false,"description":"API key; if unset, credentials are read from the local credentials file (~/.config/porteden/credentials.json) via `porteden auth login`"}],"requires":{"bins":["porteden"]},"install":[{"id":"brew","kind":"brew","formula":"porteden/tap/porteden","bins":["porteden"],"label":"Install porteden (brew)"},{"id":"go","kind":"go","module":"github.com/porteden/cli/cmd/porteden@latest","bins":["porteden"],"label":"Install porteden (go)"}]}}
 ---
 
 # porteden
@@ -13,8 +13,8 @@ If `porteden` is not installed: `brew install porteden/tap/porteden` (or `go ins
 
 ## Setup (once)
 
-- **Browser login (recommended):** `porteden auth login` — opens browser, credentials stored in system keyring
-- **Direct token:** `porteden auth login --token <key>` — stored in system keyring
+- **Browser login (recommended):** `porteden auth login` — opens browser, credentials stored in a local credentials file (~/.config/porteden/credentials.json, 0600)
+- **Direct token:** `porteden auth login --token <key>` — stored in a local credentials file (~/.config/porteden/credentials.json, 0600)
 - **Verify:** `porteden auth status`
 - If `PE_API_KEY` is set in the environment, the CLI uses it automatically (no login needed).
 
@@ -128,7 +128,7 @@ Use `porteden slides` for Google Slides read operations and file management.
 
 ## Notes
 
-- Credentials persist in the system keyring after login. No repeated auth needed.
+- Credentials persist in a local credentials file (~/.config/porteden/credentials.json, 0600 permissions) after login. No repeated auth needed.
 - Set `PE_PROFILE=work` to avoid repeating `--profile`.
 - `-jc` is shorthand for `--json --compact`: filters noise, truncates fields, reduces tokens.
 - Use `--all` to auto-fetch all pages; check `hasMore`/`nextPageToken` (email/drive) or `meta.hasMore`/`meta.totalCount` (calendar) in JSON output.

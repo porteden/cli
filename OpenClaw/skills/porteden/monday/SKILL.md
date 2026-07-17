@@ -2,7 +2,7 @@
 name: monday-cli
 description: Monday.com task management — boards, items, groups. List/create/update/delete items, manage comments, and filter across groups with friendly column-key resolution and the Monday-style JSON envelope for raw column writes (porteden secure alternative).
 version: 1.0.8
-metadata: {"openclaw":{"emoji":"📋","homepage":"https://porteden.com","primaryEnv":"PE_API_KEY","envVars":[{"name":"PE_API_KEY","required":false,"description":"API key; if unset, credentials are read from the system keyring via `porteden auth login`"}],"requires":{"bins":["porteden"]},"install":[{"id":"brew","kind":"brew","formula":"porteden/tap/porteden","bins":["porteden"],"label":"Install porteden (brew)"},{"id":"go","kind":"go","module":"github.com/porteden/cli/cmd/porteden@latest","bins":["porteden"],"label":"Install porteden (go)"}]}}
+metadata: {"openclaw":{"emoji":"📋","homepage":"https://porteden.com","primaryEnv":"PE_API_KEY","envVars":[{"name":"PE_API_KEY","required":false,"description":"API key; if unset, credentials are read from the local credentials file (~/.config/porteden/credentials.json) via `porteden auth login`"}],"requires":{"bins":["porteden"]},"install":[{"id":"brew","kind":"brew","formula":"porteden/tap/porteden","bins":["porteden"],"label":"Install porteden (brew)"},{"id":"go","kind":"go","module":"github.com/porteden/cli/cmd/porteden@latest","bins":["porteden"],"label":"Install porteden (go)"}]}}
 ---
 
 # porteden monday
@@ -13,8 +13,8 @@ If `porteden` is not installed: `brew install porteden/tap/porteden` (or `go ins
 
 ## Setup (once)
 
-- **Browser login (recommended):** `porteden auth login` — opens browser, credentials stored in system keyring
-- **Direct token:** `porteden auth login --token <key>` — stored in system keyring
+- **Browser login (recommended):** `porteden auth login` — opens browser, credentials stored in a local credentials file (~/.config/porteden/credentials.json, 0600)
+- **Direct token:** `porteden auth login --token <key>` — stored in a local credentials file (~/.config/porteden/credentials.json, 0600)
 - **Verify:** `porteden auth status`
 - If `PE_API_KEY` is set in the environment, the CLI uses it automatically (no login needed).
 - The token needs `taskManagementEnabled: true` and a verified Monday connection — set up at https://my.porteden.com.
@@ -75,7 +75,7 @@ Fetch `monday board <id>` to discover column IDs before assembling raw envelopes
 
 ## Notes
 
-- Credentials persist in the system keyring after login. `PE_PROFILE=work` avoids repeating `--profile`.
+- Credentials persist in a local credentials file (~/.config/porteden/credentials.json, 0600 permissions) after login. `PE_PROFILE=work` avoids repeating `--profile`.
 - `-jc` is shorthand for `--json --compact`: truncates descriptions, caps assignees/labels/columnValues at 10, drops embedded comments. Structural fields (`id`, `groupId`, `groupName`) are preserved.
 - **IDs are numeric strings.** Items, boards, users, columns. Round-trip them verbatim.
 - **Cursor pagination with server-signed envelopes.** Monday cursors carry filter state (`groupId`, `query`, `status`) so pagination preserves the filters from your first page. **Don't hand-edit cursors** — tampered cursors are rejected with HTTP 400. Pass `nextCursor` from the previous response back verbatim, or use `--all`.

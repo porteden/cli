@@ -2,7 +2,7 @@
 name: notion-cli
 description: Notion task management — databases, pages, page-body blocks. List/create/update/archive pages, manage comments, and read/append rich page-body blocks (paragraphs, headings, to-dos, code). The only provider with page-body support (porteden secure alternative).
 version: 1.0.8
-metadata: {"openclaw":{"emoji":"📝","homepage":"https://porteden.com","primaryEnv":"PE_API_KEY","envVars":[{"name":"PE_API_KEY","required":false,"description":"API key; if unset, credentials are read from the system keyring via `porteden auth login`"}],"requires":{"bins":["porteden"]},"install":[{"id":"brew","kind":"brew","formula":"porteden/tap/porteden","bins":["porteden"],"label":"Install porteden (brew)"},{"id":"go","kind":"go","module":"github.com/porteden/cli/cmd/porteden@latest","bins":["porteden"],"label":"Install porteden (go)"}]}}
+metadata: {"openclaw":{"emoji":"📝","homepage":"https://porteden.com","primaryEnv":"PE_API_KEY","envVars":[{"name":"PE_API_KEY","required":false,"description":"API key; if unset, credentials are read from the local credentials file (~/.config/porteden/credentials.json) via `porteden auth login`"}],"requires":{"bins":["porteden"]},"install":[{"id":"brew","kind":"brew","formula":"porteden/tap/porteden","bins":["porteden"],"label":"Install porteden (brew)"},{"id":"go","kind":"go","module":"github.com/porteden/cli/cmd/porteden@latest","bins":["porteden"],"label":"Install porteden (go)"}]}}
 ---
 
 # porteden notion
@@ -13,8 +13,8 @@ If `porteden` is not installed: `brew install porteden/tap/porteden` (or `go ins
 
 ## Setup (once)
 
-- **Browser login (recommended):** `porteden auth login` — opens browser, credentials stored in system keyring
-- **Direct token:** `porteden auth login --token <key>` — stored in system keyring
+- **Browser login (recommended):** `porteden auth login` — opens browser, credentials stored in a local credentials file (~/.config/porteden/credentials.json, 0600)
+- **Direct token:** `porteden auth login --token <key>` — stored in a local credentials file (~/.config/porteden/credentials.json, 0600)
 - **Verify:** `porteden auth status`
 - If `PE_API_KEY` is set in the environment, the CLI uses it automatically (no login needed).
 - The token needs `taskManagementEnabled: true` and a verified Notion connection — set up at https://my.porteden.com.
@@ -86,7 +86,7 @@ Empty `blocks` array returns 400 `INVALID_INPUT`. Blocks with `hasChildren: true
 
 ## Notes
 
-- Credentials persist in the system keyring after login. `PE_PROFILE=work` avoids repeating `--profile`.
+- Credentials persist in a local credentials file (~/.config/porteden/credentials.json, 0600 permissions) after login. `PE_PROFILE=work` avoids repeating `--profile`.
 - `-jc` is shorthand for `--json --compact`: truncates descriptions, caps assignees/labels/columnValues at 10, drops embedded comments, recurses sub-items one level. Structural fields (`id`, `groupId`, `groupName`) are preserved.
 - **Page / database IDs are UUIDs.** Dashed (`a1b2c3d4-...`) or 32-char hex — both accepted. Round-trip them verbatim.
 - **`groupId` encoding.** Notion groups are status/select options, encoded as `"propName|propType|optionName"` (e.g., `"Status|status|In Progress"`). Get the exact value from `notion board <id>`'s `groups[]` — don't hand-build.

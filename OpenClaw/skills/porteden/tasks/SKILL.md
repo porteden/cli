@@ -2,7 +2,7 @@
 name: porteden-tasks
 description: Cross-provider task management (Monday.com, Asana, Jira Cloud, Linear, Notion). List, search, read, create, update, delete, comment on, or archive items/issues/pages on any connected task provider — one unified surface behind a token firewall (porteden secure alternative).
 version: 1.0.8
-metadata: {"openclaw":{"emoji":"✅","homepage":"https://porteden.com","primaryEnv":"PE_API_KEY","envVars":[{"name":"PE_API_KEY","required":false,"description":"API key; if unset, credentials are read from the system keyring via `porteden auth login`"}],"requires":{"bins":["porteden"]},"install":[{"id":"brew","kind":"brew","formula":"porteden/tap/porteden","bins":["porteden"],"label":"Install porteden (brew)"},{"id":"go","kind":"go","module":"github.com/porteden/cli/cmd/porteden@latest","bins":["porteden"],"label":"Install porteden (go)"}]}}
+metadata: {"openclaw":{"emoji":"✅","homepage":"https://porteden.com","primaryEnv":"PE_API_KEY","envVars":[{"name":"PE_API_KEY","required":false,"description":"API key; if unset, credentials are read from the local credentials file (~/.config/porteden/credentials.json) via `porteden auth login`"}],"requires":{"bins":["porteden"]},"install":[{"id":"brew","kind":"brew","formula":"porteden/tap/porteden","bins":["porteden"],"label":"Install porteden (brew)"},{"id":"go","kind":"go","module":"github.com/porteden/cli/cmd/porteden@latest","bins":["porteden"],"label":"Install porteden (go)"}]}}
 ---
 
 # porteden tasks
@@ -13,8 +13,8 @@ If `porteden` is not installed: `brew install porteden/tap/porteden` (or `go ins
 
 ## Setup (once)
 
-- **Browser login (recommended):** `porteden auth login` — opens browser, credentials stored in system keyring
-- **Direct token:** `porteden auth login --token <key>` — stored in system keyring
+- **Browser login (recommended):** `porteden auth login` — opens browser, credentials stored in a local credentials file (~/.config/porteden/credentials.json, 0600)
+- **Direct token:** `porteden auth login --token <key>` — stored in a local credentials file (~/.config/porteden/credentials.json, 0600)
 - **Verify:** `porteden auth status`
 - If `PE_API_KEY` is set in the environment, the CLI uses it automatically (no login needed).
 - Task access requires a token with `taskManagementEnabled: true` and at least one verified provider connection — both configured in the PortEden dashboard at https://my.porteden.com.
@@ -46,7 +46,7 @@ If `porteden` is not installed: `brew install porteden/tap/porteden` (or `go ins
 
 ## Notes
 
-- Credentials persist in the system keyring after login. No repeated auth needed.
+- Credentials persist in a local credentials file (~/.config/porteden/credentials.json, 0600 permissions) after login. No repeated auth needed.
 - Set `PE_PROFILE=work` to avoid repeating `--profile`.
 - `-jc` is shorthand for `--json --compact`: truncates descriptions, caps assignees/labels/columnValues at 10, drops embedded comments (re-fetch via `tasks comments <id>`), recurses sub-items one level. Structural fields (`id`, `groupId`, `groupName`, `provider`) are preserved.
 - **Provider resolution.** When only one provider is connected, omit `--provider`. With multiple connected, the API returns `PROVIDER_REQUIRED` with `connectedProviders` listed in the error — pass `--provider <code>` on the retry. Provider codes: `MONDAY`, `ASANA`, `JIRA_CLOUD`, `LINEAR`, `NOTION` (case-insensitive). Per-provider shortcuts (`porteden notion`, `porteden monday`, etc.) preset the provider.

@@ -2,7 +2,7 @@
 name: porteden-sheets
 description: Google Sheets Secure Management. Use when the user wants to create, read, write, or append spreadsheet data; manage tabs (read/add/delete); copy spreadsheets; or manage sharing, permissions, renames, and deletes.
 version: 1.0.8
-metadata: {"openclaw":{"emoji":"📊","homepage":"https://porteden.com","requires":{"bins":["porteden"]},"primaryEnv":"PE_API_KEY","envVars":[{"name":"PE_API_KEY","required":false,"description":"API key; if unset, credentials are read from the system keyring via `porteden auth login`"}],"install":[{"id":"brew","kind":"brew","formula":"porteden/tap/porteden","bins":["porteden"],"label":"Install porteden (brew)"},{"id":"go","kind":"go","module":"github.com/porteden/cli/cmd/porteden@latest","bins":["porteden"],"label":"Install porteden (go)"}]}}
+metadata: {"openclaw":{"emoji":"📊","homepage":"https://porteden.com","requires":{"bins":["porteden"]},"primaryEnv":"PE_API_KEY","envVars":[{"name":"PE_API_KEY","required":false,"description":"API key; if unset, credentials are read from the local credentials file (~/.config/porteden/credentials.json) via `porteden auth login`"}],"install":[{"id":"brew","kind":"brew","formula":"porteden/tap/porteden","bins":["porteden"],"label":"Install porteden (brew)"},{"id":"go","kind":"go","module":"github.com/porteden/cli/cmd/porteden@latest","bins":["porteden"],"label":"Install porteden (go)"}]}}
 ---
 
 # porteden sheets
@@ -13,8 +13,8 @@ If `porteden` is not installed: `brew install porteden/tap/porteden` (or `go ins
 
 ## Setup (once)
 
-- **Browser login (recommended):** `porteden auth login` — opens browser, credentials stored in system keyring
-- **Direct token:** `porteden auth login --token <key>` — stored in system keyring
+- **Browser login (recommended):** `porteden auth login` — opens browser, credentials stored in a local credentials file (~/.config/porteden/credentials.json, 0600)
+- **Direct token:** `porteden auth login --token <key>` — stored in a local credentials file (~/.config/porteden/credentials.json, 0600)
 - **Verify:** `porteden auth status`
 - If `PE_API_KEY` is set in the environment, the CLI uses it automatically (no login needed).
 - Drive access requires a token with `driveAccessEnabled: true` and a connected Google account with Drive scopes.
@@ -68,7 +68,7 @@ If `porteden` is not installed: `brew install porteden/tap/porteden` (or `go ins
 
 ## Notes
 
-- Credentials persist in the system keyring after login. No repeated auth needed.
+- Credentials persist in a local credentials file (~/.config/porteden/credentials.json, 0600 permissions) after login. No repeated auth needed.
 - Set `PE_PROFILE=work` to avoid repeating `--profile`.
 - `-jc` is shorthand for `--json --compact`: strips noise, limits fields, reduces tokens for AI agents.
 - **File IDs are always provider-prefixed** (e.g., `google:1BxiMVs0XRA5...`). Pass them as-is.
