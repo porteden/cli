@@ -57,22 +57,31 @@ Examples:
 		keyTitle, _ := cmd.Flags().GetString("title")
 		profileName := getProfile(cmd)
 
-		// Delete existing key before re-authenticating
-		if existingKey, err := auth.GetStoredAPIKey(profileName); err == nil && existingKey != "" {
-			if err := auth.DeleteAPIKey(profileName); err != nil {
-				debug.Log("Failed to delete existing key for profile '%s': %v", profileName, err)
-			}
-		}
+		// Don't delete the existing key up front: StoreAPIKey overwrites the
+		// profile entry once the new login succeeds. Deleting first would leave
+		// the profile empty if the browser flow is cancelled or fails.
 
-		// Direct token authentication — minimal output, no wizard
+		// Direct token authentication — minimal output, no wizard. Verify the key
+		// against the API before saving: a mistyped or revoked token otherwise
+		// stores "successfully" and only fails on the next command. Nothing is
+		// written to the credential store until the key is confirmed good.
 		if token != "" {
+			status, err := api.NewClient(token).GetAuthStatus()
+			if err != nil {
+				return fmt.Errorf("could not verify API key (nothing was saved): %w", err)
+			}
+
 			if err := auth.StoreAPIKey(token, profileName); err != nil {
 				return fmt.Errorf("failed to store API key: %w", err)
 			}
 			if err := auth.SetActiveProfile(profileName); err != nil {
 				return fmt.Errorf("failed to set active profile: %w", err)
 			}
+
 			output.PrintSuccess(fmt.Sprintf("API key stored in profile '%s'", profileName))
+			if status.Email != "" {
+				output.PrintInfo(fmt.Sprintf("Authenticated as %s", status.Email))
+			}
 			return nil
 		}
 
@@ -217,13 +226,34 @@ func runLoginWizard(profileName, keyTitle string) (string, error) {
 
 	// Step 1: Open browser
 	output.PrintStep(1, totalSteps, "Opening browser...")
+	var userCode string
 	progress := &auth.LoginProgress{
+		OnServerMessage: func(message string) {
+			fmt.Println()
+			fmt.Println("  " + output.ColorGray(message))
+		},
+		OnUserCode: func(code string) {
+			userCode = code
+			fmt.Println()
+			fmt.Println("  Enter this code in your browser to authorize this terminal:")
+			fmt.Println()
+			fmt.Printf("      %s\n", output.ColorBold(code))
+		},
 		OnBrowserOpen: func(loginURL string) {
+			fmt.Println()
 			output.PrintInfo("If it doesn't open, visit: " + loginURL)
 		},
 		OnWaiting: func() {
 			fmt.Println()
-			output.PrintStep(2, totalSteps, "Waiting for browser authentication... "+output.ColorGray("Please complete sign-in in your browser."))
+			// Repeat the code here: the browser has taken focus by now, and on a small terminal the
+			// first printing may already have scrolled away.
+			waiting := "Waiting for browser authentication... "
+			if userCode != "" {
+				waiting += output.ColorGray("Sign in, then enter code ") + output.ColorBold(userCode)
+			} else {
+				waiting += output.ColorGray("Please complete sign-in in your browser.")
+			}
+			output.PrintStep(2, totalSteps, waiting)
 		},
 	}
 

@@ -28,6 +28,21 @@ func isRetryable(statusCode int) bool {
 	}
 }
 
+// isIdempotent reports whether re-sending the method is safe. POST and PATCH
+// are side-effecting (send email, create event, append rows, post comment): a
+// blind retry after an ambiguous failure — a dropped connection or a gateway
+// 5xx that the origin may already have acted on — can duplicate the operation.
+// 429 is handled separately: the server explicitly refused the request, so it
+// was not processed and is safe to retry regardless of method.
+func isIdempotent(method string) bool {
+	switch method {
+	case http.MethodGet, http.MethodHead, http.MethodPut, http.MethodDelete, http.MethodOptions:
+		return true
+	default:
+		return false
+	}
+}
+
 // getRetryAfter parses the Retry-After header
 func getRetryAfter(resp *http.Response) time.Duration {
 	retryAfter := resp.Header.Get("Retry-After")
@@ -83,7 +98,14 @@ func (c *Client) doWithRetry(ctx context.Context, method, path string, body []by
 		// Note: Transport handles Authorization and logging via RoundTrip
 		resp, err := c.httpClient.Do(req)
 		if err != nil {
-			// Network errors are retryable
+			// A transport error is ambiguous for a non-idempotent method — the
+			// request may have reached and been acted on by the origin before
+			// the connection failed. Don't silently re-send a POST/PATCH and
+			// duplicate the side effect; surface the error to the caller.
+			if !isIdempotent(method) {
+				return nil, err
+			}
+			// Network errors are retryable for idempotent methods.
 			lastErr = err
 			backoff = min(backoff*2, maxBackoff)
 			continue
@@ -91,6 +113,27 @@ func (c *Client) doWithRetry(ctx context.Context, method, path string, body []by
 
 		// Success or non-retryable error
 		if !isRetryable(resp.StatusCode) {
+			return resp, nil
+		}
+
+		// A 429 with a monthly-quota body is not transient — its Retry-After
+		// points at the billing-period reset, not a bucket refill. Peek the
+		// (small) body, restore it for the caller's error parsing, and bail
+		// out instead of burning retries that cannot succeed.
+		if resp.StatusCode == 429 {
+			quotaBody, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
+			resp.Body.Close()
+			resp.Body = io.NopCloser(bytes.NewReader(quotaBody))
+			if bytes.Contains(quotaBody, []byte("QUOTA_EXCEEDED")) {
+				return resp, nil
+			}
+		}
+
+		// A 5xx is ambiguous for a non-idempotent method: a gateway 502/504 can
+		// arrive after the origin already processed the write. Retry only 429
+		// (demonstrably not processed) for POST/PATCH; return the 5xx as-is so
+		// the caller sees the error instead of us duplicating the operation.
+		if resp.StatusCode != 429 && !isIdempotent(method) {
 			return resp, nil
 		}
 

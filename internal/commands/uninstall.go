@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/porteden/cli/internal/output"
@@ -71,6 +72,19 @@ func runUninstall(purge, yes bool) error {
 		}
 	}
 
+	// Purge config FIRST, before touching the binary. Binary removal can fail
+	// (notably on Windows, where the running .exe is locked) and must not skip
+	// the credential/config cleanup the user explicitly asked for.
+	if purge {
+		home, _ := os.UserHomeDir()
+		configDir := filepath.Join(home, ".config", "porteden")
+		if err := os.RemoveAll(configDir); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to remove config directory: %v\n", err)
+		} else {
+			output.PrintSuccess("Removed configuration directory")
+		}
+	}
+
 	// Execute
 	switch method {
 	case system.InstallHomebrew:
@@ -82,18 +96,15 @@ func runUninstall(purge, yes bool) error {
 		}
 	default:
 		if err := os.Remove(exePath); err != nil {
+			// Windows locks the running image, so a self-delete is expected to
+			// fail — tell the user how to finish rather than erroring out after
+			// we've already purged their config.
+			if runtime.GOOS == "windows" {
+				output.PrintInfo(fmt.Sprintf(
+					"Could not delete the running binary (Windows locks it). Delete it manually after this process exits:\n  %s", exePath))
+				return nil
+			}
 			return fmt.Errorf("failed to remove binary: %w", err)
-		}
-	}
-
-	// Purge config if requested
-	if purge {
-		home, _ := os.UserHomeDir()
-		configDir := filepath.Join(home, ".config", "porteden")
-		if err := os.RemoveAll(configDir); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to remove config directory: %v\n", err)
-		} else {
-			output.PrintSuccess("Removed configuration directory")
 		}
 	}
 

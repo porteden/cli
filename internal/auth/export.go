@@ -15,7 +15,8 @@ import (
 	"golang.org/x/term"
 )
 
-// ExportDestination represents where to export the API key beyond the keyring.
+// ExportDestination represents where to export the API key beyond the stored
+// credentials file (e.g. into an OpenClaw config or a shell profile).
 type ExportDestination string
 
 const (
@@ -177,14 +178,22 @@ func exportToShellProfile(apiKey string) error {
 	}
 
 	if matchRe.MatchString(content) {
-		// Replace existing line
-		content = matchRe.ReplaceAllString(content, exportLine)
+		// Replace existing line. Use a literal replacement: the PowerShell form
+		// ($env:PE_API_KEY = "...") contains a '$', which ReplaceAllString would
+		// interpret as a capture-group reference and mangle the written line.
+		content = matchRe.ReplaceAllLiteralString(content, exportLine)
 	} else {
 		// Append
 		if content != "" && !strings.HasSuffix(content, "\n") {
 			content += "\n"
 		}
 		content += exportLine + "\n"
+	}
+
+	// Ensure the profile's parent directory exists (e.g. Documents\PowerShell
+	// on a machine that has never created a PowerShell profile).
+	if err := os.MkdirAll(filepath.Dir(profilePath), 0700); err != nil {
+		return fmt.Errorf("failed to create profile directory: %w", err)
 	}
 
 	if err := os.WriteFile(profilePath, []byte(content), perm); err != nil {

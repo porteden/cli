@@ -22,6 +22,12 @@ var rootCmd = &cobra.Command{
 	Use:     "porteden",
 	Short:   "PortEden CLI - Calendar, email, and Google Drive from your terminal",
 	Version: config.Version,
+	// Cobra otherwise prints "Error: ..." plus the full usage block on any RunE
+	// error, and Execute() prints the error again — three copies of noise on a
+	// simple API failure. Silence both here (inherited by subcommands) and let
+	// Execute() print the single error line.
+	SilenceUsage:  true,
+	SilenceErrors: true,
 	Long: `PortEden CLI provides command-line access to calendars, email, and Google Drive.
 
 Authentication:

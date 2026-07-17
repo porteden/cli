@@ -42,19 +42,27 @@ func CheckForUpdate() {
 		}
 	}
 
+	// Engage the 24h gate NOW, synchronously. The actual network check runs in a
+	// fire-and-forget goroutine that the exiting process usually kills before it
+	// finishes — if the cache were only written there, fast commands (the common
+	// case for an agent looping the CLI) would never persist it and every single
+	// invocation would hammer api.github.com's 60/hr unauthenticated limit.
+	_ = os.MkdirAll(configDir(), 0700)
+	_ = os.WriteFile(cacheFile, []byte(time.Now().UTC().Format(time.RFC3339)), 0600)
+
 	// Perform check in background
+	current := config.SemverVersion()
 	go func() {
 		latestVersion, err := FetchLatestVersion()
 		if err != nil {
 			return // Fail silently
 		}
 
-		// Update cache file timestamp
-		_ = os.MkdirAll(configDir(), 0700)
+		// Refresh the cache with the version we actually saw.
 		_ = os.WriteFile(cacheFile, []byte(latestVersion), 0600)
 
 		// Compare versions (simple string comparison - assumes semver)
-		if latestVersion != config.Version && latestVersion > config.Version {
+		if latestVersion != current && latestVersion > current {
 			fmt.Fprintf(os.Stderr, "\n%s\n",
 				output.ColorYellow(fmt.Sprintf(
 					"A new version of porteden is available (%s). %s",
