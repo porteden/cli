@@ -43,13 +43,25 @@ detect_platform() {
 
 # Get latest version from GitHub
 get_latest_version() {
-    curl -sL "https://api.github.com/repos/${REPO}/releases/latest" | \
+    curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" | \
         grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/'
 }
 
 # Download and install
 install_binary() {
     PLATFORM=$(detect_platform)
+    # detect_platform runs in a subshell, so its OS/ARCH assignments don't
+    # propagate here — derive them from the returned "os_arch" string.
+    OS="${PLATFORM%%_*}"
+    ARCH="${PLATFORM#*_}"
+
+    # This shell installer targets Unix-like layouts (tar.gz, /usr/local/bin).
+    # Windows releases ship as .zip with porteden.exe — point those users there
+    # instead of attempting an install path that cannot work.
+    if [ "$OS" = "windows" ]; then
+        error "This installer does not support Windows. Download the .zip from https://github.com/${REPO}/releases and add porteden.exe to your PATH."
+    fi
+
     VERSION=${VERSION:-$(get_latest_version)}
 
     if [ -z "$VERSION" ]; then
@@ -73,8 +85,11 @@ install_binary() {
     trap "rm -rf $TMPDIR" EXIT
 
     info "Downloading from ${DOWNLOAD_URL}..."
-    if ! curl -sL "$DOWNLOAD_URL" -o "$TMPDIR/$FILENAME"; then
-        error "Download failed. Check if release exists: https://github.com/${REPO}/releases"
+    # -f makes curl fail (non-zero) on HTTP 4xx/5xx instead of saving the error
+    # page as the archive, which would surface later as a confusing
+    # "not in gzip format" extraction failure.
+    if ! curl -fsSL "$DOWNLOAD_URL" -o "$TMPDIR/$FILENAME"; then
+        error "Download failed (release or asset not found). See https://github.com/${REPO}/releases"
     fi
 
     info "Extracting..."

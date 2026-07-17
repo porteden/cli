@@ -56,7 +56,7 @@ brews:
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
     directory: Formula
     homepage: https://porteden.com
-    description: Calendar firewall & management CLI for PortEden
+    description: Data firewall CLI for PortEden — calendar, email, Drive, and tasks
     license: MIT
     install: |
       bin.install "porteden"
